@@ -1,0 +1,15 @@
+# Every file left in the directory: type, permissions, owner, group, link
+# count, times and link target, all taken in one pass so reading doesn't
+# move access times; then contents. Times from this run (set to now, or on
+# files the module made) read NOW.
+- name: List the files
+  ansible.builtin.shell:
+    cmd: |
+      cd "{{ file_dir }}" || exit 0
+      # A link's own access time moves whenever it is read, so it's left out.
+      find . -mindepth 1 \( -type l -printf '%p %y %u %g %Ts %l\n' -o -printf '%p %y %m %u %g %n %Ts %As\n' \) 2>/dev/null \
+        | LC_ALL=C sort | sed -E 's/ 1[7-9][0-9]{8}\b/ NOW/g'
+      find . -mindepth 1 -type f -readable 2>/dev/null | LC_ALL=C sort | while read -r f; do echo "$f $(base64 -w0 < "$f")"; done
+    executable: /bin/bash
+  register: captured
+  changed_when: false

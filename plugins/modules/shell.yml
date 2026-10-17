@@ -1,0 +1,151 @@
+DOCUMENTATION:
+  module: shell
+  short_description: Execute shell commands on targets
+  description:
+    - Compiled Go replacement for M(ansible.builtin.shell), with the same options and results.
+      It does not need Python on the target.
+    - The M(compiled.builtin.shell) module takes the command name followed by a list of space-delimited arguments.
+    - Either a free form command or O(cmd) parameter is required, see the examples.
+    - It is almost exactly like the M(compiled.builtin.command) module but runs
+      the command through a shell (C(/bin/sh)) on the remote node.
+    - Like M(ansible.builtin.shell), it is M(compiled.builtin.command) run with a shell, and shares its code.
+    - Free form commands need ansible-core 2.19 or later. Older versions reject them for modules other than
+      M(ansible.builtin.shell) when loading the playbook; use O(cmd) there.
+  version_added: 1.0.0
+  options:
+    free_form:
+      description:
+        - The shell module takes a free form command to run, as a string.
+        - There is no actual parameter named 'free form'.
+        - See the examples on how to use this module.
+      type: str
+    cmd:
+      type: str
+      description:
+        - The command to run followed by optional arguments.
+    creates:
+      description:
+        - A filename, when it already exists, this step will B(not) be run.
+      type: path
+    removes:
+      description:
+        - A filename, when it does not exist, this step will B(not) be run.
+      type: path
+    chdir:
+      description:
+        - Change into this directory before running the command.
+      type: path
+    executable:
+      description:
+        - Change the shell used to execute the command.
+        - This expects an absolute path to the executable.
+      type: path
+    stdin:
+      description:
+        - Set the stdin of the command directly to the specified value.
+      type: str
+    stdin_add_newline:
+      description:
+        - Whether to append a newline to stdin data.
+      type: bool
+      default: true
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+    - ansible.builtin.action_common_attributes.raw
+  attributes:
+    check_mode:
+      details: while the command itself is arbitrary and cannot be subject to the check mode semantics it adds O(creates)/O(removes) options as a workaround
+      support: partial
+    diff_mode:
+      support: none
+    platform:
+      support: full
+      platforms: posix
+    raw:
+      support: full
+  notes:
+    - If you want to execute a command securely and predictably, it may be
+      better to use the M(compiled.builtin.command) module instead.
+    - To sanitize any variables passed to the shell module, you should use
+      C({{ var | quote }}) instead of just C({{ var }}) to make sure they
+      do not include evil things like semicolons.
+    - Async tasks need Python on the target, as Ansible's async wrapper is written in Python.
+  seealso:
+    - module: ansible.builtin.shell
+    - module: compiled.builtin.command
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Execute the command in remote shell; stdout goes to the specified file on the remote
+    compiled.builtin.shell: somescript.sh >> somelog.txt
+
+  - name: Change the working directory to somedir/ before executing the command
+    compiled.builtin.shell: somescript.sh >> somelog.txt
+    args:
+      chdir: somedir/
+
+  - name: This command will change the working directory to somedir/ and will only run when somedir/somelog.txt doesn't exist
+    compiled.builtin.shell:
+      cmd: somescript.sh >> somelog.txt
+      chdir: somedir/
+      creates: somelog.txt
+
+  - name: Run a command that uses non-posix shell-isms (in this example /bin/sh doesn't handle redirection and wildcards together but bash does)
+    compiled.builtin.shell: cat < /tmp/*txt
+    args:
+      executable: /bin/bash
+
+  - name: Run a multi-line script
+    compiled.builtin.shell:
+      cmd: |
+        set -e
+        echo first
+        echo second
+
+RETURN:
+  msg:
+    description: Why the command did or did not run, or why it failed.
+    returned: always
+    type: str
+  start:
+    description: The command execution start time.
+    returned: always
+    type: str
+    sample: '2016-02-25 09:18:26.429568'
+  end:
+    description: The command execution end time.
+    returned: always
+    type: str
+    sample: '2016-02-25 09:18:26.755339'
+  delta:
+    description: The command execution delta time.
+    returned: always
+    type: str
+    sample: '0:00:00.325771'
+  stdout:
+    description: The command standard output.
+    returned: always
+    type: str
+  stderr:
+    description: The command standard error.
+    returned: always
+    type: str
+  cmd:
+    description: The command executed by the task.
+    returned: always
+    type: str
+    sample: 'rabbitmqctl join_cluster rabbit@master'
+  rc:
+    description: The command return code (0 means success).
+    returned: always
+    type: int
+    sample: 0
+  stdout_lines:
+    description: The command standard output split in lines.
+    returned: always
+    type: list
+  stderr_lines:
+    description: The command standard error split in lines.
+    returned: always
+    type: list

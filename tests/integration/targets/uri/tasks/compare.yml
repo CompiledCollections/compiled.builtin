@@ -1,0 +1,61 @@
+- name: "{{ case.name }} | prepare for ansible.builtin.uri"
+  ansible.builtin.include_tasks: prepare.yml
+  when: case.dest | default(false)
+
+- name: "{{ case.name }} | ansible.builtin.uri"
+  ansible.builtin.uri:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after ansible.builtin.uri"
+  ansible.builtin.include_tasks: capture.yml
+  when: case.dest | default(false)
+- ansible.builtin.set_fact:
+    builtin_files: "{{ captured.stdout | default('') }}"
+
+- name: "{{ case.name }} | prepare for compiled.builtin.uri"
+  ansible.builtin.include_tasks: prepare.yml
+  when: case.dest | default(false)
+
+- name: "{{ case.name }} | compiled.builtin.uri"
+  compiled.builtin.uri:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after compiled.builtin.uri"
+  ansible.builtin.include_tasks: capture.yml
+  when: case.dest | default(false)
+- ansible.builtin.set_fact:
+    compiled_files: "{{ captured.stdout | default('') }}"
+
+- name: "{{ case.name }} | results match"
+  when:
+    - case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
+    - case.python_differs is not defined or ansible_facts.python_version is version(case.python_differs.before, '>=')
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    # Python adds the location in its C source to TLS errors.
+    ssl_location: ' \(_ssl\.c:\d+\)'
+    # Multipart boundaries and digest nonces are random.
+    boundary: '={15}\d{19}=='
+    nonce: 'nonce=\\"[0-9a-f]+\\"'
+    volatile: [ansible_facts, invocation, exception, module_stderr, elapsed, date]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(ssl_location, '') | regex_replace(boundary, 'BOUNDARY') | regex_replace(nonce, 'nonce=NONCE') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(ssl_location, '') | regex_replace(boundary, 'BOUNDARY') | regex_replace(nonce, 'nonce=NONCE') }}"
+  ansible.builtin.assert:
+    # No inline if/else: ansible-core 2.17 can't parse it in a conditional.
+    that: >-
+      (case.compare | default('') == 'failed' and (builtin is failed) == (compiled is failed))
+      or (case.compare | default('') != 'failed' and want == got and builtin_files == compiled_files)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }} {{ builtin_files }}
+      compiled.builtin: {{ got }} {{ compiled_files }}
+    quiet: true

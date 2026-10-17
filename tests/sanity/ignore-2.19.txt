@@ -1,0 +1,26 @@
+plugins/modules/command.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/command.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/command_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in command.yml
+plugins/modules/copy.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/copy.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/copy_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in copy.yml
+plugins/modules/file.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/file.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/file_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in file.yml
+plugins/modules/lineinfile.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/lineinfile.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/lineinfile_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in lineinfile.yml
+plugins/modules/ping.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/ping.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/ping_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in ping.yml
+plugins/modules/shell.meta validate-modules!skip  # makes the module name resolvable for its docs (shell runs the command binary), not a module
+plugins/modules/shell.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/slurp.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/slurp.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/slurp_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in slurp.yml
+plugins/modules/stat.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/stat.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/stat_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in stat.yml
+plugins/modules/uri.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/uri.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/uri_linux_amd64 validate-modules!skip  # compiled binary module: validate-modules only reads text; its docs are in uri.yml

@@ -1,0 +1,25 @@
+- name: Run the cases, then stop the test server
+  block:
+    - name: Files the cases use on the target
+      ansible.builtin.shell: |
+        rm -rf "{{ uri_dir }}" && mkdir -p "{{ uri_dir }}"
+        printf 'remote file\n' > "{{ uri_dir }}/remote.txt"
+        printf 'machine 127.0.0.1 login nuser password npass\n' > "{{ uri_dir }}/netrc"
+        chmod 0600 "{{ uri_dir }}/netrc"
+
+    - name: Compare compiled.builtin.uri with ansible.builtin.uri
+      ansible.builtin.include_tasks: compare.yml
+      loop: "{{ uri_cases }}"
+      loop_control:
+        loop_var: case
+        label: "{{ case.name }}"
+
+    - name: Async
+      ansible.builtin.include_tasks: async.yml
+
+    - name: Features without a Go equivalent fail clearly
+      ansible.builtin.include_tasks: unsupported.yml
+  always:
+    - name: Stop the test server
+      ansible.builtin.shell: kill "$(cat '{{ http_server_dir }}/server.pid')"
+      ignore_errors: true

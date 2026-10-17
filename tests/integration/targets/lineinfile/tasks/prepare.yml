@@ -1,0 +1,27 @@
+- name: Start from a fresh directory
+  ansible.builtin.shell: rm -rf "{{ lif_dir }}" && mkdir -p "{{ lif_dir }}"
+
+- name: Write the starting content
+  ansible.builtin.copy:
+    content: "{{ case.content }}"
+    dest: "{{ lif_file }}"
+    mode: "{{ case.file_mode | default('0644') }}"
+  when: case.content is defined
+
+- name: Write the starting bytes
+  ansible.builtin.shell: printf '%s' '{{ case.content_b64 }}' | base64 -d > "{{ lif_file }}" && chmod 0644 "{{ lif_file }}"
+  when: case.content_b64 is defined
+
+- name: Link to the file
+  ansible.builtin.file:
+    src: "{{ lif_file }}"
+    dest: "{{ lif_dir }}/link.txt"
+    state: link
+  when: case.symlink | default(false)
+
+- name: Module arguments
+  ansible.builtin.set_fact:
+    module_args: >-
+      {{ ({} if case.no_path | default(false)
+          or case.args.keys() | intersect(['path', 'dest', 'destfile', 'name'])
+          else {'path': lif_file}) | combine(case.args) }}

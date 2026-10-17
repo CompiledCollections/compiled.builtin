@@ -1,0 +1,96 @@
+stat_dir: "{{ output_dir }}/stat"
+
+# Each case runs ansible.builtin.stat and compiled.builtin.stat with the same
+# arguments; the results must match. The files are made by tasks/main.yml.
+# `volatile` lists stat keys left out of the comparison for that case.
+#
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+stat_cases:
+  # File types
+  - name: regular file
+    args: {path: "{{ stat_dir }}/file.txt"}
+  - name: empty file
+    args: {path: "{{ stat_dir }}/empty.txt"}
+  - name: binary file
+    args: {path: "{{ stat_dir }}/binary.bin"}
+  - name: directory
+    args: {path: "{{ stat_dir }}/dir"}
+  - name: symlink not followed
+    args: {path: "{{ stat_dir }}/link.txt"}
+    # Reading a link (readlink, file) moves its own access time.
+    volatile: [atime]
+  - name: symlink followed
+    args: {path: "{{ stat_dir }}/link.txt", follow: true}
+  - name: broken symlink
+    args: {path: "{{ stat_dir }}/broken"}
+    # Reading a link (readlink, file) moves its own access time.
+    volatile: [atime]
+  - name: broken symlink followed
+    args: {path: "{{ stat_dir }}/broken", follow: true}
+  - name: hard link
+    args: {path: "{{ stat_dir }}/hard.txt"}
+  - name: fifo
+    args: {path: "{{ stat_dir }}/fifo"}
+  - name: character device
+    args: {path: /dev/null}
+    volatile: [atime, mtime, ctime]
+  - name: setuid and setgid file
+    args: {path: "{{ stat_dir }}/suid"}
+  - name: unicode file name
+    args: {path: "{{ stat_dir }}/ünïcode ✓.txt"}
+  - name: missing file
+    args: {path: "{{ stat_dir }}/missing"}
+  - name: path inside an unreadable directory
+    args: {path: "{{ stat_dir }}/locked/inner.txt"}
+    # Root can read it, and the builtin's checksum read then moves its access time.
+    volatile: [atime]
+  - name: unreadable file has no checksum
+    args: {path: "{{ stat_dir }}/unreadable.txt"}
+    # Root can read it, and the builtin's checksum read then moves its access time.
+    volatile: [atime]
+
+  # Options
+  - name: md5
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: md5}
+  - name: sha224
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: sha224}
+  - name: sha256
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: sha256}
+  - name: sha384
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: sha384}
+  - name: sha512
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: sha512}
+  - name: no checksum
+    args: {path: "{{ stat_dir }}/file.txt", get_checksum: false}
+  - name: no mime
+    args: {path: "{{ stat_dir }}/file.txt", get_mime: false}
+  - name: no attributes
+    args: {path: "{{ stat_dir }}/file.txt", get_attributes: false}
+  - name: selinux context
+    args: {path: "{{ stat_dir }}/file.txt", get_selinux_context: true}
+    builtin_differs: {before: "2.20", why: 'an older builtin has no get_selinux_context option'}
+  - name: aliases
+    args: {dest: "{{ stat_dir }}/file.txt", checksum: sha256, mime: false, attr: false}
+  - name: name alias and checksum_algo
+    args: {name: "{{ stat_dir }}/file.txt", checksum_algo: md5, mime_type: false}
+  - name: path with a variable
+    args: {path: "$STAT_DIR/file.txt"}
+    environment: {STAT_DIR: "{{ stat_dir }}"}
+  - name: path with ~
+    args: {path: "~"}
+    volatile: [atime, mtime, ctime, size, nlink]
+
+  # Modes and arguments
+  - name: check mode
+    args: {path: "{{ stat_dir }}/file.txt"}
+    check_mode: true
+  - name: path is required
+    args: {follow: true}
+  - name: unknown checksum algorithm
+    args: {path: "{{ stat_dir }}/file.txt", checksum_algorithm: crc32}
+  - name: unsupported option
+    args: {path: "{{ stat_dir }}/file.txt", bogus: 1}
+    builtin_differs: {before: "2.20", why: 'an older builtin has no get_selinux_context option'}

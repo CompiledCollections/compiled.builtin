@@ -1,0 +1,42 @@
+# Starts files/testserver.py on the target: plain HTTP (also an HTTP proxy),
+# HTTPS, HTTPS requiring a client certificate, and a unix socket, on free
+# ports. Sets http_url, https_url, mtls_url, closed_url, http_socket and
+# http_server_dir. Stop it with: kill $(cat {{ http_server_dir }}/server.pid)
+- name: Directory for the test HTTP server
+  ansible.builtin.file:
+    path: "{{ output_dir }}/http_server"
+    state: directory
+    mode: "0755"
+
+- name: Copy the server and its certificates
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ output_dir }}/http_server/{{ item }}"
+    mode: "0600"
+  loop: [testserver.py, ca.pem, server.pem, server.key, client.pem, client.key, client-combined.pem]
+
+- name: Start the server
+  ansible.builtin.shell: >-
+    rm -f ports.json;
+    nohup {{ ansible_python_interpreter | default(ansible_playbook_python) }} testserver.py --dir . > server.log 2>&1 &
+  args:
+    chdir: "{{ output_dir }}/http_server"
+
+- name: Wait for it to listen
+  ansible.builtin.wait_for:
+    path: "{{ output_dir }}/http_server/ports.json"
+    timeout: 30
+
+- name: Read its ports
+  ansible.builtin.slurp:
+    src: "{{ output_dir }}/http_server/ports.json"
+  register: http_ports_file
+
+- name: Server URLs
+  ansible.builtin.set_fact:
+    http_server_dir: "{{ output_dir }}/http_server"
+    http_url: "http://127.0.0.1:{{ (http_ports_file.content | b64decode | from_json).http }}"
+    https_url: "https://localhost:{{ (http_ports_file.content | b64decode | from_json).https }}"
+    mtls_url: "https://localhost:{{ (http_ports_file.content | b64decode | from_json).mtls }}"
+    closed_url: "http://127.0.0.1:{{ (http_ports_file.content | b64decode | from_json).closed }}"
+    http_socket: "{{ (http_ports_file.content | b64decode | from_json).unix }}"

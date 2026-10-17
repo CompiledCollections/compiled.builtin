@@ -1,0 +1,298 @@
+{
+ "json": [
+  {
+   "in": "{\"z\": 1, \"a\": [true, false, null], \"f\": 1.5, \"big\": 12345678901234567890}",
+   "out": "{\"z\": 1, \"a\": [true, false, null], \"f\": 1.5, \"big\": 12345678901234567890}"
+  },
+  {
+   "in": "{\"s\": \"\\u00fcn\\u00efcode \\u2713 \\\"quoted\\\" \\\\ back\", \"astral\": \"\\ud834\\udd1e\", \"ctrl\": \"\\u0000\\u001f\\u007f\\t\\n\\r\\b\\f\", \"slash\": \"/\"}",
+   "out": "{\"s\": \"\\u00fcn\\u00efcode \\u2713 \\\"quoted\\\" \\\\ back\", \"astral\": \"\\ud834\\udd1e\", \"ctrl\": \"\\u0000\\u001f\\u007f\\t\\n\\r\\b\\f\", \"slash\": \"/\"}"
+  },
+  {
+   "in": "[1.0, 1e+100, -0.0, 0.1, 2.5e-10, -7]",
+   "out": "[1.0, 1e+100, -0.0, 0.1, 2.5e-10, -7]"
+  },
+  {
+   "in": "\"just a string\"",
+   "out": "\"just a string\""
+  },
+  {
+   "in": "null",
+   "out": "null"
+  },
+  {
+   "in": "{\"nested\": {\"deep\": [{\"k\": \"v\"}, []]}, \"empty\": {}}",
+   "out": "{\"nested\": {\"deep\": [{\"k\": \"v\"}, []]}, \"empty\": {}}"
+  }
+ ],
+ "form": [
+  {
+   "in": "{\"name\": \"a b&c=d\", \"unicode\": \"\\u00e9\\u2713\", \"list\": [1, \"two\"], \"none\": null, \"flag\": true, \"num\": 3, \"f\": 1.5}",
+   "out": "name=a+b%26c%3Dd&unicode=%C3%A9%E2%9C%93&list=1&list=two&flag=True&num=3&f=1.5"
+  },
+  {
+   "in": "[[\"a\", 1], [\"b\", [2, 3]], [\"c\", \"x y\"], [\"d\", {\"k1\": 1, \"k2\": 2}]]",
+   "out": "a=1&b=2&b=3&c=x+y&d=k1&d=k2"
+  },
+  {
+   "in": "{\"nested\": {\"x\": 1}, \"list_of_lists\": [[1, 2]], \"safe\": \"_.-~ +/%\"}",
+   "out": "nested=x&list_of_lists=%5B1%2C+2%5D&safe=_.-~+%2B%2F%25"
+  },
+  {
+   "in": "[[\"a\"]]",
+   "error": "ValueError",
+   "msg": "not enough values to unpack (expected 2, got 1)"
+  },
+  {
+   "in": "[[\"a\", \"b\", \"c\"]]",
+   "error": "ValueError",
+   "msg": "too many values to unpack (expected 2, got 3)"
+  },
+  {
+   "in": "[\"ab\"]",
+   "out": "a=b"
+  },
+  {
+   "in": "[5]",
+   "error": "TypeError",
+   "msg": "cannot unpack non-iterable int object"
+  },
+  {
+   "in": "{}",
+   "out": ""
+  }
+ ],
+ "multipart": [
+  {
+   "in": "{\"text\": \"plain value\", \"b\": {\"content\": \"inline\\ncontent\\r\\nmore\", \"filename\": \"inline.txt\", \"mime_type\": \"text/plain\"}}",
+   "out": {
+    "content_type": "multipart/form-data; boundary=\"BOUNDARY\"",
+    "body": "--BOUNDARY\r\nContent-Type: text/plain\r\nContent-Disposition: form-data; name=\"b\"; filename=\"inline.txt\"\r\n\r\ninline\r\ncontent\r\nmore\r\n--BOUNDARY\r\nContent-Type: text/plain\r\nContent-Disposition: form-data; name=\"text\"\r\n\r\nplain value\r\n--BOUNDARY--\r\n"
+   }
+  },
+  {
+   "in": "{\"guessed\": {\"content\": \"{\\\"k\\\": 1}\", \"filename\": \"data.json\"}, \"unknown\": {\"content\": \"x\", \"filename\": \"file.zzz\"}, \"nomime\": {\"content\": \"no filename\"}}",
+   "out": {
+    "content_type": "multipart/form-data; boundary=\"BOUNDARY\"",
+    "body": "--BOUNDARY\r\nContent-Type: application/json\r\nContent-Disposition: form-data; name=\"guessed\"; filename=\"data.json\"\r\n\r\n{\"k\": 1}\r\n--BOUNDARY\r\nContent-Type: application/octet-stream\r\nContent-Disposition: form-data; name=\"nomime\"\r\n\r\nno filename\r\n--BOUNDARY\r\nContent-Type: application/octet-stream\r\nContent-Disposition: form-data; name=\"unknown\"; filename=\"file.zzz\"\r\n\r\nx\r\n--BOUNDARY--\r\n"
+   }
+  },
+  {
+   "in": "{\"file\": {\"filename\": \"testdata/upload.bin\"}, \"file7\": {\"filename\": \"testdata/upload.bin\", \"multipart_encoding\": \"7or8bit\"}}",
+   "out": {
+    "content_type": "multipart/form-data; boundary=\"BOUNDARY\"",
+    "body": "--BOUNDARY\r\nContent-Transfer-Encoding: base64\r\nContent-Type: application/octet-stream\r\nContent-Disposition: form-data; name=\"file\"; filename=\"upload.bin\"\r\n\r\nbGluZSBvbmUKbGluZSB0d28gw6kKAAFiaW5hcnkNCmVuZA==\r\n\r\n--BOUNDARY\r\nContent-Transfer-Encoding: 8bit\r\nContent-Type: application/octet-stream\r\nContent-Disposition: form-data; name=\"file7\"; filename=\"upload.bin\"\r\n\r\nline one\r\nline two Ã©\r\n\u0000\u0001binary\r\nend\r\n--BOUNDARY--\r\n"
+   }
+  },
+  {
+   "in": "{\"quoted\": {\"content\": \"q\", \"filename\": \"we\\\"ird\\\\name.txt\"}, \"num\": {\"content\": 5, \"filename\": \"n.txt\"}}",
+   "out": {
+    "content_type": "multipart/form-data; boundary=\"BOUNDARY\"",
+    "body": "--BOUNDARY\r\nContent-Type: text/plain\r\nContent-Disposition: form-data; name=\"num\"; filename=\"n.txt\"\r\n\r\n5\r\n--BOUNDARY\r\nContent-Type: text/plain\r\nContent-Disposition: form-data; name=\"quoted\"; filename=\"we\\\"ird\\\\name.txt\"\r\n\r\nq\r\n--BOUNDARY--\r\n"
+   }
+  },
+  {
+   "in": "{\"bad\": 5}",
+   "error": "TypeError",
+   "msg": "value must be a string, or mapping, cannot be type int"
+  },
+  {
+   "in": "{\"bad\": {\"mime_type\": \"text/plain\"}}",
+   "error": "ValueError",
+   "msg": "at least one of filename or content must be provided"
+  },
+  {
+   "in": "{\"bad\": {\"filename\": \"testdata/upload.bin\", \"multipart_encoding\": \"base32\"}}",
+   "error": "ValueError",
+   "msg": "multipart_encoding must be one of dict_keys(['base64', '7or8bit'])."
+  },
+  {
+   "in": "\"not a mapping\"",
+   "error": "TypeError",
+   "msg": "Mapping is required, cannot be type str"
+  }
+ ],
+ "mask_url": [
+  {
+   "in": "http://example.com/path",
+   "out": "http://example.com/path"
+  },
+  {
+   "in": "http://user:pass@example.com/x",
+   "out": "http://****:****@example.com/x"
+  },
+  {
+   "in": "http://user@example.com/x",
+   "out": "http://****@example.com/x"
+  },
+  {
+   "in": "https://user:p%40ss@host:8443/a?b=c#d",
+   "out": "https://****:****@host:8443/a?b=c#d"
+  },
+  {
+   "in": "http://user:@example.com/x",
+   "out": "http://user:@example.com/x"
+  },
+  {
+   "in": "ftp://u:p@h/f",
+   "out": "ftp://****:****@h/f"
+  }
+ ],
+ "content_type": [
+  {
+   "in": "application/json",
+   "content_type": "application/json",
+   "sub_type": "json",
+   "charset": "utf-8"
+  },
+  {
+   "in": "application/json; charset=ISO-8859-1",
+   "content_type": "application/json",
+   "sub_type": "json",
+   "charset": "ISO-8859-1"
+  },
+  {
+   "in": "Text/HTML;Charset=\"utf-16\"",
+   "content_type": "text/html",
+   "sub_type": "html",
+   "charset": "utf-16"
+  },
+  {
+   "in": "",
+   "content_type": "text/plain",
+   "sub_type": "plain",
+   "charset": "utf-8"
+  },
+  {
+   "in": "json",
+   "content_type": "text/plain",
+   "sub_type": "plain",
+   "charset": "utf-8"
+  },
+  {
+   "in": "text/plain; charset=utf-8, latin-1",
+   "content_type": "text/plain",
+   "sub_type": "plain",
+   "charset": "utf-8"
+  },
+  {
+   "in": "application/vnd.api+json",
+   "content_type": "application/vnd.api+json",
+   "sub_type": "vnd.api+json",
+   "charset": "utf-8"
+  },
+  {
+   "in": "multipart/form-data; boundary=x; charset=us-ascii",
+   "content_type": "multipart/form-data",
+   "sub_type": "form-data",
+   "charset": "us-ascii"
+  }
+ ],
+ "disposition": [
+  {
+   "in": "attachment; filename=\"report.pdf\"",
+   "out": "report.pdf"
+  },
+  {
+   "in": "attachment; filename=plain.txt",
+   "out": "plain.txt"
+  },
+  {
+   "in": "inline; filename=\"dir/sub/x.bin\"",
+   "out": "x.bin"
+  },
+  {
+   "in": "attachment; filename=\"esc\\\"aped.txt\"",
+   "out": "esc\"aped.txt"
+  },
+  {
+   "in": "attachment",
+   "out": null
+  },
+  {
+   "in": "",
+   "out": null
+  }
+ ],
+ "urljoin": [
+  {
+   "base": "http://h/a/b",
+   "ref": "c",
+   "out": "http://h/a/c"
+  },
+  {
+   "base": "http://h/a/b",
+   "ref": "/c",
+   "out": "http://h/c"
+  },
+  {
+   "base": "http://h/a/b",
+   "ref": "../c?x=1",
+   "out": "http://h/c?x=1"
+  },
+  {
+   "base": "http://h/a/b?q",
+   "ref": "?r",
+   "out": "http://h/a/b?r"
+  },
+  {
+   "base": "http://h/a/b",
+   "ref": "https://other/x",
+   "out": "https://other/x"
+  },
+  {
+   "base": "http://h/a/b",
+   "ref": "//other/y",
+   "out": "http://other/y"
+  },
+  {
+   "base": "http://****:****@h/a",
+   "ref": "next",
+   "out": "http://****:****@h/next"
+  }
+ ],
+ "redirect_quote": [
+  {
+   "in": "/path with space",
+   "out": "/path%20with%20space"
+  },
+  {
+   "in": "/ünï",
+   "out": "/%FCn%EF"
+  },
+  {
+   "in": "/ok/!$&'()*+,;=:@",
+   "out": "/ok/!$&'()*+,;=:@"
+  },
+  {
+   "in": "/%41already",
+   "out": "/%41already"
+  }
+ ],
+ "netrc": [
+  {
+   "host": "example.com",
+   "out": [
+    "exuser",
+    "",
+    "expass"
+   ]
+  },
+  {
+   "host": "other.org",
+   "out": [
+    "ouser",
+    "",
+    "opass"
+   ]
+  },
+  {
+   "host": "unknown.net",
+   "out": [
+    "duser",
+    "",
+    "dpass"
+   ]
+  }
+ ]
+}

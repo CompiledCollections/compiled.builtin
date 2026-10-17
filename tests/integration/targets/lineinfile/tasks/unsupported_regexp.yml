@@ -1,0 +1,45 @@
+# Python regexp features with no RE2 equivalent (lookahead, lookbehind,
+# backreferences, verbose mode) make the compiled module fail with a message
+# naming the feature and RE2, instead of matching differently, and leave the
+# file untouched. Only the compiled module runs: the builtin supports them.
+- name: Write a file
+  ansible.builtin.copy:
+    content: "foo=1\n"
+    dest: "{{ lif_file }}"
+    mode: "0644"
+
+- name: Unsupported regexp features
+  compiled.builtin.lineinfile:
+    path: "{{ lif_file }}"
+    regexp: "{{ item.regexp }}"
+    line: x
+  register: unsupported
+  ignore_errors: true
+  loop:
+    - {regexp: 'foo(?=1)', feature: lookahead}
+    - {regexp: '(?<!x)foo', feature: lookbehind}
+    - {regexp: '(a)\1', feature: backreferences}
+    - {regexp: '(?P<n>a)(?P=n)', feature: backreferences}
+    - {regexp: '(?x) foo', feature: verbose}
+  loop_control:
+    label: "{{ item.regexp }}"
+
+- name: Each fails and says why
+  ansible.builtin.assert:
+    that:
+      - item is failed
+      # Before ansible-core 2.19 the message is in module_stderr
+      - (item.msg ~ item.module_stderr | default('')) is search(item.item.feature)
+      - (item.msg ~ item.module_stderr | default('')) is search('RE2')
+    fail_msg: "{{ item | to_json }}"
+  loop: "{{ unsupported.results }}"
+  loop_control:
+    label: "{{ item.item.regexp }}"
+
+- name: The file is untouched
+  ansible.builtin.slurp:
+    src: "{{ lif_file }}"
+  register: untouched
+
+- ansible.builtin.assert:
+    that: untouched.content | b64decode == "foo=1\n"

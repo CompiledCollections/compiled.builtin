@@ -1,0 +1,33 @@
+- name: "{{ case.name }} | ansible.builtin.stat"
+  ansible.builtin.stat:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | compiled.builtin.stat"
+  compiled.builtin.stat:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | results match"
+  when: case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    # disk_usage_bytes is new in ansible-core 2.21; the compiled module always has it.
+    new_keys: "{{ ['disk_usage_bytes'] if ansible_version.full is version('2.21', '<') else [] }}"
+    case_volatile: "{{ case.volatile | default([]) + new_keys }}"
+    volatile: [ansible_facts, invocation, exception, module_stderr]
+    want_stat: "{{ builtin.stat | default({}) | dict2items | rejectattr('key', 'in', case_volatile) | items2dict }}"
+    got_stat: "{{ compiled.stat | default({}) | dict2items | rejectattr('key', 'in', case_volatile) | items2dict }}"
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile + ['stat']) | items2dict | combine({'stat': want_stat}) | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile + ['stat']) | items2dict | combine({'stat': got_stat}) | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') }}"
+  ansible.builtin.assert:
+    that: want == got
+    fail_msg: "{{ case.name }}: results differ\nansible.builtin: {{ want }}\ncompiled.builtin: {{ got }}"
+    quiet: true

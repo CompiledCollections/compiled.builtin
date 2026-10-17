@@ -1,0 +1,30 @@
+- name: Files the cases inspect
+  ansible.builtin.shell:
+    cmd: |
+      rm -rf "{{ stat_dir }}" && mkdir -p "{{ stat_dir }}/dir" "{{ stat_dir }}/locked" && cd "{{ stat_dir }}"
+      printf 'hello\nworld\n' > file.txt
+      : > empty.txt
+      printf '\000\001\002binary' > binary.bin
+      ln -s file.txt link.txt
+      ln -s nowhere broken
+      printf 'linked\n' > hard.txt && ln hard.txt hard2.txt
+      mkfifo fifo
+      printf 'suid\n' > suid && chmod 6755 suid
+      printf 'unicode\n' > 'ünïcode ✓.txt'
+      printf 'inner\n' > locked/inner.txt && chmod 000 locked
+      printf 'secret\n' > unreadable.txt && chmod 000 unreadable.txt
+      # Read every file once, so later reads don't move access times (relatime).
+      cat file.txt empty.txt binary.bin hard.txt suid 'ünïcode ✓.txt' > /dev/null
+    executable: /bin/bash
+
+- name: Compare compiled.builtin.stat with ansible.builtin.stat
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ stat_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Let the test framework remove the directory
+  ansible.builtin.file:
+    path: "{{ stat_dir }}/locked"
+    mode: "0755"

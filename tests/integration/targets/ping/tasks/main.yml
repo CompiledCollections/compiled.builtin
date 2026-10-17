@@ -1,0 +1,6 @@
+- name: Compare compiled.builtin.ping with ansible.builtin.ping
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ ping_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"

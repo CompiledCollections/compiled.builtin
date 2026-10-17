@@ -1,0 +1,11 @@
+# Every file left in dest_dir: type, permissions and content.
+- name: List the files
+  ansible.builtin.shell: |
+    cd "{{ dest_dir }}" || exit 0
+    find . -mindepth 1 | sort | while read -r f; do
+      if [ -d "$f" ]; then echo "$f dir $(stat -c '%a' "$f")"
+      else echo "$f file $(stat -c '%a' "$f") $(base64 -w0 < "$f")"
+      fi
+    done
+  register: captured
+  changed_when: false
