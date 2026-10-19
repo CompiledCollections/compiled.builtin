@@ -724,7 +724,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - missing file: args `{src: "{{ slurp_dir }}/missing.txt"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
 - directory: args `{src: "{{ slurp_dir }}"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
-- unreadable file: args `{src: "{{ slurp_dir }}/unreadable.txt"}`
+- unreadable file: args `{src: "{{ slurp_dir }}/unreadable.txt"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
 - symlink loop: args `{src: "{{ slurp_dir }}/loop"}`, *not compared before ansible-core 2.19: its message starts in lowercase and names the OS error instead of a literal {source}*
 - file under a regular file: args `{src: "{{ slurp_dir }}/text.txt/child"}`, *not compared before ansible-core 2.19: its message starts in lowercase and names the OS error instead of a literal {source}*
 

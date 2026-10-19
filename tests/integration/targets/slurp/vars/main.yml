@@ -59,6 +59,8 @@ slurp_cases:
     builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
   - name: unreadable file
     args: {src: "{{ slurp_dir }}/unreadable.txt"}
+    # Only fails when not run as root: root reads it anyway.
+    builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
   - name: symlink loop
     args: {src: "{{ slurp_dir }}/loop"}
     builtin_differs: {before: "2.19", why: 'its message starts in lowercase and names the OS error instead of a literal {source}'}
