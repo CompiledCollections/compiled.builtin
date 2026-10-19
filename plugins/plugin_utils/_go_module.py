@@ -17,6 +17,7 @@ at:
 from __future__ import annotations
 
 import os
+import re
 from collections.abc import Mapping
 
 from ansible import constants as C
@@ -59,6 +60,43 @@ GOARCH = {
     's390x': 's390x',
     'riscv64': 'riscv64',
 }
+
+# The <goos>_<goarch> pairs Go can build out of the two maps above, the only
+# values compiled_builtin_platform can take.
+PLATFORMS = frozenset([
+    'aix_ppc64',
+    'darwin_amd64', 'darwin_arm64',
+    'freebsd_386', 'freebsd_amd64', 'freebsd_arm', 'freebsd_arm64',
+    'linux_386', 'linux_amd64', 'linux_arm', 'linux_arm64', 'linux_ppc64le', 'linux_riscv64', 'linux_s390x',
+    'netbsd_386', 'netbsd_amd64', 'netbsd_arm', 'netbsd_arm64',
+    'openbsd_386', 'openbsd_amd64', 'openbsd_arm', 'openbsd_arm64', 'openbsd_riscv64',
+    'solaris_amd64',
+])
+
+
+def go_platform(system, machine):
+    """'<goos>_<goarch>' for a uname -s and -m pair (or the system and
+    architecture facts), or None when the pair isn't supported."""
+    goos, goarch = GOOS.get(system.lower()), GOARCH.get(machine.lower())
+    if goos == 'aix':
+        # AIX reports no usable architecture: uname -m is the machine ID,
+        # and the architecture fact is getconf's MACHINE_ARCHITECTURE
+        # (chrp). Go only targets AIX on 64-bit POWER anyway.
+        goarch = 'ppc64'
+    platform = '%s_%s' % (goos, goarch)
+    return platform if platform in PLATFORMS else None
+
+
+def invalid_platform_message(value):
+    """The error for a compiled_builtin_platform value not in PLATFORMS."""
+    msg = 'Invalid %s %r: it must be <goos>_<goarch>, with Go\'s names for the system and architecture' % (
+        PLATFORM_FACT, value)
+    # Spot uname-style values such as linux-x86_64, Linux x86_64 or linux/amd64.
+    parts = re.split(r'[-_/ ]', value.strip(), maxsplit=1) if isinstance(value, str) else []
+    guess = go_platform(*parts) if len(parts) == 2 else None
+    if guess:
+        msg += " (did you mean '%s'?)" % guess
+    return '%s. Valid values: %s' % (msg, ', '.join(sorted(PLATFORMS)))
 
 
 def cache_dir():
@@ -250,9 +288,14 @@ class CompiledModules:
         and the second item is an error message.
         """
         facts = task_vars.get('ansible_facts', {})
-        cached = facts.get(PLATFORM_FACT) or task_vars.get(PLATFORM_FACT)
+        cached = task_vars.get(PLATFORM_FACT) or facts.get(PLATFORM_FACT)
         if cached:
-            return cached, False
+            # Set by hand when the target can't be asked, so check it here
+            # rather than let go build or the target reject it.
+            cached = self._templar.template(cached)
+            if not (isinstance(cached, str) and cached in PLATFORMS):
+                return None, invalid_platform_message(cached)
+            return str(cached), False
 
         system, machine = facts.get('system'), facts.get('architecture')
         detected = False
@@ -267,15 +310,10 @@ class CompiledModules:
             system, machine = fields
             detected = True
 
-        goos, goarch = GOOS.get(system.lower()), GOARCH.get(machine.lower())
-        if goos == 'aix':
-            # AIX reports no usable architecture: uname -m is the machine ID,
-            # and the architecture fact is getconf's MACHINE_ARCHITECTURE
-            # (chrp). Go only targets AIX on 64-bit POWER anyway.
-            goarch = 'ppc64'
-        if not (goos and goarch):
+        platform = go_platform(system, machine)
+        if platform is None:
             return None, 'Unsupported target platform: %s %s' % (system, machine)
-        return '%s_%s' % (goos, goarch), detected
+        return platform, detected
 
 
 class GoModuleAction(CompiledModules, ActionBase):

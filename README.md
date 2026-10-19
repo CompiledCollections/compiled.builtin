@@ -24,7 +24,7 @@ integration tests check this by running both side by side.
 
 ## Requirements
 
-ansible-core 2.16 or late.
+ansible-core 2.16 or later.
 The targets need no Python (except for async tasks, see below).
 
 Binaries are named `<module>_<GOOS>_<GOARCH>`, Go's names for the target
@@ -37,8 +37,10 @@ system and architecture. The action plugin maps the target's `uname -s` and
 - AIX is always `aix_ppc64`, the only AIX platform Go supports (AIX 7.2 or
   later on POWER8 or later): AIX reports a machine ID or `chrp` instead of
   an architecture.
-- Anything else (big-endian ppc64, mips, loongarch64...) is unsupported, and
-  tasks fail with "Unsupported target platform".
+- Anything else (big-endian ppc64, mips, loongarch64...), or a pair Go
+  can't build for (such as macOS on i386), is unsupported, and tasks fail
+  with "Unsupported target platform". The supported pairs are listed under
+  [How a task runs](#how-a-task-runs).
 
 ### Differences from the builtins
 
@@ -158,22 +160,25 @@ tests/build.py               Build and test script
 1. The action plugin works out the target's platform from gathered facts
    (`ansible_facts.system` and `ansible_facts.architecture`), or by running
    `uname -sm` when facts are not gathered. It caches the result in the
-   `compiled_builtin_platform` fact, which you may set from inventory if 
-   fact gathering isn't available.
+   `compiled_builtin_platform` fact. You can set `compiled_builtin_platform`
+   yourself (in inventory, group_vars, as an extra var...) when neither facts
+   nor uname are available. A value you set wins over the cached fact.
 
-Platform names come for Go (GOARCH and GOOS) Here are the possible values:
+   It is `<goos>_<goarch>`, Go's names for the system and architecture, not
+   uname's (`linux_amd64`, not `linux-x86_64`). The valid values are:
 
-  - linux_amd64
-  - linux_arm64
-  - linux_arm
-  - linux_386
-  - linux_ppc64le
-  - linux_s390x
-  - linux_riscv64
-  - darwin_arm64 / darwin_amd64
-  - freebsd_amd64, openbsd_amd64, netbsd_amd64 (or _arm64)
-  - solaris_amd64
-  - aix_ppc64
+   - linux_386, linux_amd64, linux_arm, linux_arm64, linux_ppc64le,
+     linux_riscv64, linux_s390x
+   - darwin_amd64, darwin_arm64
+   - freebsd_386, freebsd_amd64, freebsd_arm, freebsd_arm64
+   - openbsd_386, openbsd_amd64, openbsd_arm, openbsd_arm64, openbsd_riscv64
+   - netbsd_386, netbsd_amd64, netbsd_arm, netbsd_arm64
+   - solaris_amd64
+   - aix_ppc64
+
+   Any other value fails the task, listing these (and suggesting the right
+   one for uname-style values). A valid value for the wrong platform isn't
+   caught: the binary then fails to run on the target.
 
 2. If `plugins/modules/<module>_<goos>_<goarch>` exists, it runs that.
 3. Otherwise it runs `go build` on the controller and caches the binary in

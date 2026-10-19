@@ -624,6 +624,10 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - check mode: args `{data: checked}`, check mode
 - unsupported option: args `{data: x, bogus: 1}`
 
+#### Dedicated checks
+
+- `tasks/platform.yml`: compiled_builtin_platform set by hand (as from inventory, when facts and uname aren't available) is used as given when valid, and rejected with the list of valid values, plus a suggestion for uname-style values, when not.
+
 ### shell
 
 38 side-by-side cases in `tests/integration/targets/shell/vars/main.yml`.

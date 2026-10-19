@@ -4,3 +4,6 @@
   loop_control:
     loop_var: case
     label: "{{ case.name }}"
+
+- name: Check compiled_builtin_platform set by hand
+  ansible.builtin.include_tasks: platform.yml
