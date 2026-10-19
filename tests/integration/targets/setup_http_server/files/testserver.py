@@ -222,14 +222,47 @@ class ThreadingUnixServer(socketserver.ThreadingMixIn, socketserver.UnixStreamSe
     daemon_threads = True
 
 
+class TLSServer(ThreadingHTTPServer):
+    """Does the TLS handshake in the request's thread, and closes a failed one
+    gracefully.
+
+    After rejecting a handshake (no client certificate, say) the server has
+    sent its alert, but with TLS 1.3 the client has already sent more: its
+    Finished message, often the request. Closing a socket with unread data
+    makes the kernel send a reset, which can reach the client before the
+    alert, so it reports "connection reset by peer" instead of the alert.
+    So stop writing, read until the client closes, then close.
+    """
+
+    def finish_request(self, request, client_address):
+        request.settimeout(10)
+        try:
+            request.do_handshake()
+        except (ssl.SSLError, OSError):
+            linger_close(request)
+            return
+        request.settimeout(None)
+        super().finish_request(request, client_address)
+
+
+def linger_close(sock):
+    try:
+        sock.shutdown(socket.SHUT_WR)  # also drops the TLS layer: recv reads raw bytes
+        while sock.recv(65536):
+            pass
+    except OSError:
+        pass
+    sock.close()
+
+
 def tls_server(directory, client_certs):
-    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    server = TLSServer(('127.0.0.1', 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.load_cert_chain(os.path.join(directory, 'server.pem'), os.path.join(directory, 'server.key'))
     if client_certs:
         context.verify_mode = ssl.CERT_REQUIRED
         context.load_verify_locations(os.path.join(directory, 'ca.pem'))
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server.socket = context.wrap_socket(server.socket, server_side=True, do_handshake_on_connect=False)
     return server
 
 
