@@ -79,7 +79,27 @@ def cmd_unit(args):
 
 
 def cmd_sanity(args):
-    run(['ansible-test', 'sanity', '--local'], cwd=COLLECTION_ROOT)
+    # validate-modules can't read binaries. In a git checkout ansible-test
+    # doesn't see them (they're gitignored); otherwise move them out of the
+    # way while it runs.
+    visible = [path for path in glob.glob(os.path.join(go_build.MODULES_DIR, '*_*_*'))
+               if not os.path.basename(path).endswith(('.yml', '.meta')) and not git_ignored(path)]
+    with tempfile.TemporaryDirectory() as aside:
+        for path in visible:
+            shutil.move(path, aside)
+        try:
+            run(['ansible-test', 'sanity', '--local'], cwd=COLLECTION_ROOT)
+        finally:
+            for path in visible:
+                shutil.move(os.path.join(aside, os.path.basename(path)), path)
+
+
+def git_ignored(path):
+    """True if path is in a git checkout that ignores it."""
+    if shutil.which('git') is None:
+        return False
+    return subprocess.run(['git', 'check-ignore', '-q', path], cwd=COLLECTION_ROOT, capture_output=True,
+                          check=False).returncode == 0
 
 
 def cmd_integration(args):
@@ -148,9 +168,10 @@ ansible-core's own uri code, in `testdata/python.json` files (each made by the
 ## Sanity tests
 
 `ansible-test sanity`: documentation, action plugins and Python code. The
-binaries and the `<module>.meta` name placeholders are skipped
-(`tests/sanity/ignore-*.txt`): validate-modules can only read text, and the
-placeholders aren't modules.
+`<module>.meta` name placeholders are skipped (`tests/sanity/ignore-*.txt`):
+they aren't modules. validate-modules can't read the binaries either: in a
+git checkout ansible-test doesn't see them (they're gitignored), and
+otherwise `sanity` moves them aside while it runs.
 
 ## Integration tests
 

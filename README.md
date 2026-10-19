@@ -223,8 +223,10 @@ come in three layers:
   results recorded from CPython (`internal/ansible/testdata/python.json`,
   made by `generate.py` there), so they match Python, not a reading of it.
 - **Sanity** (`ansible-test sanity`): docs, action plugins and Python code.
-  The binaries and `.meta` files are skipped in
-  `tests/sanity/ignore-2.21.txt`, since validate-modules can only read text.
+  The `.meta` files are skipped in `tests/sanity/ignore-*.txt`. The
+  binaries are gitignored, so ansible-test doesn't see them in a git
+  checkout; outside one, `build.py sanity` moves them aside while it runs,
+  since validate-modules can only read text.
 - **Integration** (`ansible-test integration`): each case in
   `tests/integration/targets/<module>/vars/main.yml` runs
   `ansible.builtin.<module>` and `compiled.builtin.<module>` with the same

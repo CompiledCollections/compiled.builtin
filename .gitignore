@@ -7,7 +7,8 @@
 # Compiled module binaries (<module>_<goos>_<goarch>). They are built by
 # tests/build.py in CI and for releases, and compiled on demand by the action
 # plugins when missing. Only the docs (.yml) and name placeholders (.meta) are
-# tracked here. To commit the binaries instead, delete these three lines.
+# tracked here. To commit the binaries instead, delete these three lines and
+# add a validate-modules!skip entry for each binary to tests/sanity/ignore-*.txt.
 /plugins/modules/*
 !/plugins/modules/*.yml
 !/plugins/modules/*.meta

@@ -39,9 +39,10 @@ Results recorded from CPython (and, for uri, ansible-core), by kind:
 ## Sanity tests
 
 `ansible-test sanity`: documentation, action plugins and Python code. The
-binaries and the `<module>.meta` name placeholders are skipped
-(`tests/sanity/ignore-*.txt`): validate-modules can only read text, and the
-placeholders aren't modules.
+`<module>.meta` name placeholders are skipped (`tests/sanity/ignore-*.txt`):
+they aren't modules. validate-modules can't read the binaries either: in a
+git checkout ansible-test doesn't see them (they're gitignored), and
+otherwise `sanity` moves them aside while it runs.
 
 ## Integration tests
 
