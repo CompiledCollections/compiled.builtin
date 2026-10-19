@@ -1,0 +1,9 @@
+- name: Compare compiled.builtin.file with ansible.builtin.file
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ file_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Let the test framework remove the directory
+  ansible.builtin.shell: chmod -R u+rwX "{{ file_dir }}" 2>/dev/null || true

@@ -1,0 +1,160 @@
+DOCUMENTATION:
+  module: command
+  short_description: Execute commands on targets
+  description:
+    - Compiled Go replacement for M(ansible.builtin.command), with the same options and results.
+      It does not need Python on the target.
+    - The command name is followed by a list of space-delimited arguments, split like Python's C(shlex.split).
+    - The command is not processed through the shell, so operations like C("*"), C("<"), C(">"), C("|"),
+      C(";") and C("&") will not work. Environment variables are expanded by the module, see O(expand_argument_vars),
+      and are left unchanged if not matched.
+    - Either a free form command, O(cmd) or O(argv) is required, see the examples.
+      A free form command is split exactly as for M(ansible.builtin.command), so words such as V(FOO=bar)
+      stay part of the command.
+    - Free form commands need ansible-core 2.19 or later. Older versions reject them for modules other than
+      M(ansible.builtin.command) when loading the playbook; use O(cmd) or O(argv) there.
+  version_added: 1.0.0
+  options:
+    free_form:
+      description:
+        - The command module takes a free form string as a command to run.
+        - There is no actual parameter named C(free_form).
+    cmd:
+      type: str
+      description:
+        - The command to run.
+    argv:
+      type: list
+      elements: str
+      description:
+        - Passes the command as a list rather than a string.
+        - Use O(argv) to avoid quoting values that would otherwise be interpreted incorrectly (for example "user name").
+        - Only the string (free form) or the list (argv) form can be provided, not both. One or the other must be provided.
+    creates:
+      type: path
+      description:
+        - A filename or glob pattern. If a matching file already exists, this step B(will not) be run.
+        - This is checked before O(removes) is checked.
+    removes:
+      type: path
+      description:
+        - A filename or glob pattern. If a matching file exists, this step B(will) be run.
+        - This is checked after O(creates) is checked.
+    chdir:
+      type: path
+      description:
+        - Change into this directory before running the command.
+    stdin:
+      type: str
+      description:
+        - Set the stdin of the command directly to the specified value.
+    stdin_add_newline:
+      type: bool
+      default: true
+      description:
+        - If set to V(true), append a newline to stdin data.
+    strip_empty_ends:
+      type: bool
+      default: true
+      description:
+        - Strip empty lines from the end of stdout/stderr in result.
+    expand_argument_vars:
+      type: bool
+      default: true
+      description:
+        - Expands the arguments that are variables, for example C($HOME) will be expanded before being passed to the command to run.
+        - If a variable is not matched, it is left unchanged, unlike shell substitution which would remove it.
+        - Set to V(false) to disable expansion and treat the value as a literal argument.
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+    - ansible.builtin.action_common_attributes.raw
+  attributes:
+    check_mode:
+      details: while the command itself is arbitrary and cannot be subject to the check mode semantics it adds O(creates)/O(removes) options as a workaround
+      support: partial
+    diff_mode:
+      support: none
+    platform:
+      support: full
+      platforms: posix
+    raw:
+      support: full
+  notes:
+    - Check mode is supported when passing O(creates) or O(removes). If running in check mode and either of these are specified, the module will
+      check for the existence of the file and report the correct changed status. If these are not supplied, the task will be skipped.
+    - Async tasks need Python on the target, as Ansible's async wrapper is written in Python.
+  seealso:
+    - module: ansible.builtin.command
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Return motd to registered var
+    compiled.builtin.command: cat /etc/motd
+    register: mymotd
+
+  - name: Run command if /path/to/database does not exist (with 'cmd' parameter)
+    compiled.builtin.command:
+      cmd: /usr/bin/make_database.sh db_user db_name
+      creates: /path/to/database
+
+  - name: Change the working directory to somedir/ and run the command if /path/to/database does not exist
+    compiled.builtin.command: /usr/bin/make_database.sh db_user db_name
+    args:
+      chdir: somedir/
+      creates: /path/to/database
+
+  - name: Use 'argv' to send a command as a list
+    compiled.builtin.command:
+      argv:
+        - /usr/bin/make_database.sh
+        - Username with whitespace
+        - dbname with whitespace
+      creates: /path/to/database
+
+RETURN:
+  msg:
+    description: Why the command did or did not run, or why it failed.
+    returned: always
+    type: str
+  start:
+    description: The command execution start time.
+    returned: always
+    type: str
+    sample: '2017-09-29 22:03:48.083128'
+  end:
+    description: The command execution end time.
+    returned: always
+    type: str
+    sample: '2017-09-29 22:03:48.084657'
+  delta:
+    description: The command execution delta time.
+    returned: always
+    type: str
+    sample: '0:00:00.001529'
+  stdout:
+    description: The command standard output.
+    returned: always
+    type: str
+  stderr:
+    description: The command standard error.
+    returned: always
+    type: str
+  cmd:
+    description: The command executed by the task.
+    returned: always
+    type: list
+    sample: [echo, hello]
+  rc:
+    description: The command return code (0 means success).
+    returned: always
+    type: int
+    sample: 0
+  stdout_lines:
+    description: The command standard output split in lines.
+    returned: always
+    type: list
+  stderr_lines:
+    description: The command standard error split in lines.
+    returned: always
+    type: list

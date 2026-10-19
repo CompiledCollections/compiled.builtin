@@ -1,0 +1,233 @@
+copy_dir: "{{ output_dir }}/copy"
+copy_src: "{{ output_dir }}/copy-src"
+dest: "{{ copy_dir }}/dest"
+rsrc: "{{ copy_dir }}/rsrc"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+
+# Each case starts from the tree tasks/prepare.yml makes in copy_dir (plus
+# any shell `setup`), runs ansible.builtin.copy and compiled.builtin.copy
+# with `args`, and compares the results and the files left behind. Sources
+# on the controller are in copy_src (made by tasks/main.yml); remote_src
+# sources are in rsrc. Diff mode is on unless `diff: false`. Times from the
+# run itself read NOW. `compare: failed` only compares whether the task
+# failed. `python_differs: {before: VERSION, why: ...}` skips the
+# comparison on targets with an older Python.
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+copy_cases:
+  # content
+  - name: content to a new file
+    args: {content: "new\n", dest: "{{ dest }}/new.txt"}
+  - name: content unchanged
+    args: {content: "hello\n", dest: "{{ dest }}/same.txt"}
+  - name: content replacing a file
+    args: {content: "new\n", dest: "{{ dest }}/old.txt"}
+  - name: content with mode
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", mode: "0600"}
+  - name: content with a symbolic mode
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", mode: "u=rw,g=,o="}
+  - name: content unchanged, mode changed
+    args: {content: "hello\n", dest: "{{ dest }}/same.txt", mode: "0640"}
+  - name: content with mode preserve
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", mode: preserve}
+  - name: content with backup
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", backup: true}
+  - name: content with backup of a new file
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", backup: true}
+  - name: content in check mode
+    args: {content: "new\n", dest: "{{ dest }}/old.txt"}
+    check_mode: true
+  - name: content without diff
+    args: {content: "new\n", dest: "{{ dest }}/old.txt"}
+    diff: false
+  - name: content not forced over a file
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", force: false}
+  - name: content not forced, new file
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", force: false}
+  - name: content as a dict
+    args: {content: {a: 1, b: [x, y]}, dest: "{{ dest }}/new.json"}
+  - name: content empty
+    args: {content: "", dest: "{{ dest }}/old.txt"}
+  - name: content into an existing directory
+    args: {content: "new\n", dest: "{{ dest }}/dir"}
+  - name: content to a path ending in a slash
+    args: {content: "new\n", dest: "{{ dest }}/dir/"}
+  - name: content in a missing directory
+    args: {content: "new\n", dest: "{{ dest }}/missing/new.txt"}
+  - name: content in a read-only directory
+    args: {content: "new\n", dest: "{{ copy_dir }}/ro/new.txt"}
+    setup: mkdir ro && chmod 0555 ro
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+  - name: content with owner and group
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", owner: "{{ current_user }}", group: "{{ other_group }}"}
+  - name: content with an unknown owner
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", owner: no_such_user_xyz}
+  - name: content over a symlink, not followed
+    args: {content: "new\n", dest: "{{ dest }}/link.txt"}
+  - name: content over a symlink, followed
+    args: {content: "new\n", dest: "{{ dest }}/link.txt", follow: true}
+  - name: content over a symlink, same content, followed
+    args: {content: "old\n", dest: "{{ dest }}/link.txt", follow: true}
+  - name: content with a passing validate
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", validate: "grep -q new %s"}
+  - name: content with a failing validate
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", validate: "grep -q nothing %s"}
+  - name: content with validate without %s
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", validate: "true"}
+  - name: content with a wrong checksum
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", checksum: "0123456789abcdef0123456789abcdef01234567"}
+  - name: content with the right checksum
+    args: {content: "new\n", dest: "{{ dest }}/new.txt", checksum: "389cc6b7ae5a659383eab5dfc253764eccf84732"}
+  - name: content with unsafe_writes
+    args: {content: "new\n", dest: "{{ dest }}/old.txt", unsafe_writes: true}
+  - name: content to a relative-looking path through an environment variable
+    args: {content: "new\n", dest: "$COPY_TEST_DEST/new.txt"}
+    environment: {COPY_TEST_DEST: "{{ dest }}"}
+
+  # src on the controller
+  - name: file to a new file
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/new.txt"}
+  - name: file unchanged
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/same.txt"}
+  - name: file into a directory
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/dir"}
+  - name: file into a new directory (trailing slash)
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/newdir/sub/"}
+  - name: file into a new directory with directory_mode
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/newdir/sub/", directory_mode: "0700"}
+  - name: file into a new directory in check mode
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/newdir/"}
+    check_mode: true
+  - name: file with mode preserve
+    args: {src: "{{ copy_src }}/script.sh", dest: "{{ dest }}/script.sh", mode: preserve}
+  - name: file keeps the mode of the file it replaces
+    args: {src: "{{ copy_src }}/script.sh", dest: "{{ dest }}/old.txt"}
+    setup: chmod 0600 dest/old.txt
+  - name: binary file
+    args: {src: "{{ copy_src }}/binary.bin", dest: "{{ dest }}/old.txt"}
+  - name: file with backup
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/old.txt", backup: true}
+  - name: file not forced
+    args: {src: "{{ copy_src }}/hello.txt", dest: "{{ dest }}/old.txt", force: false}
+  - name: missing src
+    args: {src: "{{ copy_src }}/missing.txt", dest: "{{ dest }}/new.txt"}
+  - name: file with validate and suffix
+    args: {src: "{{ copy_src }}/script.sh", dest: "{{ dest }}/new.sh", validate: "sh -n %s"}
+
+  # Directories from the controller
+  - name: directory without a trailing slash
+    args: {src: "{{ copy_src }}/tree", dest: "{{ dest }}/dir"}
+  - name: directory with a trailing slash
+    args: {src: "{{ copy_src }}/tree/", dest: "{{ dest }}/dir"}
+  - name: directory to a new path
+    args: {src: "{{ copy_src }}/tree", dest: "{{ dest }}/newdir"}
+  - name: directory with directory_mode
+    args: {src: "{{ copy_src }}/tree", dest: "{{ dest }}/dir", directory_mode: "0750"}
+  - name: directory with mode
+    args: {src: "{{ copy_src }}/tree/", dest: "{{ dest }}/dir", mode: "0600"}
+  - name: directory, links not followed
+    args: {src: "{{ copy_src }}/tree", dest: "{{ dest }}/dir", local_follow: false}
+  - name: directory in check mode
+    args: {src: "{{ copy_src }}/tree", dest: "{{ dest }}/dir"}
+    check_mode: true
+
+  # remote_src
+  - name: remote file to a new file
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true}
+  - name: remote file unchanged
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/same.txt", remote_src: true}
+  - name: remote file replacing a file
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}
+    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
+  - name: remote file into a directory
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/dir", remote_src: true}
+  - name: remote file into a new directory (trailing slash)
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/newdir/", remote_src: true}
+  - name: remote file with mode preserve
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true, mode: preserve}
+  - name: remote file with mode
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, mode: "0600"}
+  - name: remote file with backup
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, backup: true}
+    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
+  - name: remote file in check mode
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}
+    check_mode: true
+  - name: remote file not forced
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, force: false}
+  - name: remote file over a symlink
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/link.txt", remote_src: true}
+    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
+  - name: remote file with a failing validate
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, validate: "false %s"}
+  - name: remote missing src
+    args: {src: "{{ rsrc }}/missing.txt", dest: "{{ dest }}/new.txt", remote_src: true}
+  - name: remote unreadable src
+    args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true}
+    setup: chmod 0 rsrc/hello.txt
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+  - name: remote src that isn't a file or directory
+    args: {src: /dev/null, dest: "{{ dest }}/new.txt", remote_src: true}
+  - name: remote directory without a trailing slash
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/dir", remote_src: true}
+  - name: remote directory with a trailing slash
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
+  - name: remote directory to a new path
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true}
+    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
+  - name: remote directory to a new nested path
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/newdir/a", remote_src: true}
+  - name: remote directory with directory_mode
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, directory_mode: "0700"}
+    builtin_differs: {before: "2.21", why: 'an older builtin doesn''t apply directory_mode to the destination directory itself'}
+  - name: remote directory, links followed
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: true}
+    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
+  - name: remote directory, links not followed
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: false}
+    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
+  - name: remote directory into a partial copy
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
+    setup: |
+      mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/a.txt && printf 'b\n' > dest/dir/sub/b.txt && printf 'extra\n' > dest/dir/extra.txt
+      touch -d @1577836800 dest/dir/sub/b.txt
+  - name: remote directory into a partial copy, links not followed
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true, local_follow: false}
+    setup: mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/sub/b.txt
+  - name: remote directory into a partial copy, links followed
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true, local_follow: true}
+    setup: mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/sub/b.txt
+  - name: remote directory into a partial copy, same size and time
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
+    setup: |
+      mkdir -p dest/dir && printf 'z\n' > dest/dir/a.txt && touch -d @1577836800 dest/dir/a.txt
+  - name: remote directory into a partial copy with owner
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true, owner: "{{ current_user }}", group: "{{ other_group }}"}
+    setup: mkdir -p dest/dir/sub
+  - name: remote directory in check mode
+    args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true}
+    check_mode: true
+  - name: remote directory into an existing copy in check mode
+    args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
+    check_mode: true
+    setup: mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/sub/b.txt
+
+  # Errors and options
+  - name: src and content
+    args: {src: "{{ copy_src }}/hello.txt", content: "x", dest: "{{ dest }}/new.txt"}
+  - name: neither src nor content
+    args: {dest: "{{ dest }}/new.txt"}
+  - name: no dest
+    args: {content: "x"}
+  - name: internal option given
+    args: {content: "x", dest: "{{ dest }}/new.txt", _original_basename: x}
+  - name: unsupported option
+    args: {content: "x", dest: "{{ dest }}/new.txt", bogus: true}
+  - name: invalid boolean
+    args: {content: "x", dest: "{{ dest }}/new.txt", backup: maybe}
+  - name: invalid mode
+    args: {content: "x", dest: "{{ dest }}/new.txt", mode: "abc"}

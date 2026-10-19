@@ -1,0 +1,21 @@
+# Async works like the builtin: fire and forget followed by async_status.
+# (Ansible's async wrapper needs Python on the target.)
+- name: Request in the background
+  compiled.builtin.uri:
+    url: "{{ http_url }}/delay/1"
+  async: 30
+  poll: 0
+  register: job
+
+- name: Wait for it
+  ansible.builtin.async_status:
+    jid: "{{ job.ansible_job_id }}"
+  register: job_result
+  until: job_result.finished
+  retries: 30
+  delay: 1
+
+- ansible.builtin.assert:
+    that:
+      - job_result.status == 200
+      - job_result.json.path == '/delay/1'

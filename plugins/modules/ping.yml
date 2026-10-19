@@ -1,0 +1,44 @@
+DOCUMENTATION:
+  module: ping
+  short_description: Try to connect to host and return V(pong) on success
+  description:
+    - Compiled Go replacement for M(ansible.builtin.ping), with the same options and results.
+    - Unlike M(ansible.builtin.ping), it does not need Python on the target, so it does not verify that a
+      usable Python is configured.
+    - This is NOT ICMP ping, this is just a trivial test module.
+  version_added: 1.0.0
+  options:
+    data:
+      description:
+        - Data to return for the RV(ping) return value.
+        - If this parameter is set to V(crash), the module will fail as if it raised an exception.
+      type: str
+      default: pong
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+  attributes:
+    check_mode:
+      support: full
+    diff_mode:
+      support: none
+    platform:
+      platforms: posix
+  seealso:
+    - module: ansible.builtin.ping
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Example from an Ansible Playbook
+    compiled.builtin.ping:
+
+  - name: Induce a failure to see what happens
+    compiled.builtin.ping:
+      data: crash
+
+RETURN:
+  ping:
+    description: Value provided with the O(data) parameter.
+    returned: success
+    type: str
+    sample: pong

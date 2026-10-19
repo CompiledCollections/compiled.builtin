@@ -1,0 +1,29 @@
+- name: Files the cases read
+  ansible.builtin.shell: |
+    rm -rf "{{ slurp_dir }}" && mkdir -p "{{ slurp_dir }}" && cd "{{ slurp_dir }}"
+    printf 'hello\nworld\n' > text.txt
+    printf '\000\001\002\377\376binary\r\n\200' > binary.bin
+    : > empty.txt
+    printf 'ünïcode ✓ 𝄞\n' > unicode.txt
+    head -c 1048576 /dev/urandom > large.bin
+    ln -s text.txt link.txt
+    ln -s loop loop
+    printf 'secret\n' > unreadable.txt && chmod 000 unreadable.txt
+    printf 'in home\n' > ~/.compiled_builtin_slurp_test
+
+- name: A file in the home directory
+  ansible.builtin.set_fact:
+    slurp_home_file: .compiled_builtin_slurp_test
+
+- name: Compare compiled.builtin.slurp with ansible.builtin.slurp
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ slurp_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Remove the files in the home directory
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: ["~/.compiled_builtin_slurp_test"]

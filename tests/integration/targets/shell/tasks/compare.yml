@@ -1,0 +1,39 @@
+# Before ansible-core 2.19 the builtin has no cmd option: the task parser
+# turns a cmd written in the task into _raw_params. Templated args skip the
+# parser, so do the same here for the builtin.
+- name: "{{ case.name }} | arguments for ansible.builtin.shell"
+  ansible.builtin.set_fact:
+    builtin_args: >-
+      {{ case.args if ansible_version.full is version('2.19', '>=') or 'cmd' not in case.args
+         else case.args | dict2items | rejectattr('key', 'eq', 'cmd') | items2dict | combine({'_raw_params': case.args.cmd}) }}
+
+- name: "{{ case.name }} | ansible.builtin.shell"
+  ansible.builtin.shell:
+  args: "{{ builtin_args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | compiled.builtin.shell"
+  compiled.builtin.shell:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | results match"
+  when: case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    volatile: [ansible_facts, invocation, exception, module_stderr, start, end, delta]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') }}"
+  ansible.builtin.assert:
+    that:
+      - want == got
+      - (builtin.start | default(none) is none) == (compiled.start | default(none) is none)
+    fail_msg: "{{ case.name }}: results differ\nansible.builtin: {{ want }}\ncompiled.builtin: {{ got }}"
+    quiet: true

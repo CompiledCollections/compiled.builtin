@@ -1,0 +1,370 @@
+file_dir: "{{ output_dir }}/file"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_uid: "{{ lookup('pipe', 'id -u') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+# Unix time of 2021-03-04 05:06:07 in the target's time zone, as a string
+# for the default format (%Y%m%d%H%M.%S).
+fixed_time: "202103040506.07"
+
+# Each case starts from the tree tasks/prepare.yml makes in file_dir (plus
+# any shell `setup`), runs ansible.builtin.file and compiled.builtin.file
+# with `args`, and compares the results and the files left behind. Diff
+# mode is on unless `diff: false`. Times from the run itself (set to now,
+# or of files the module made) read NOW. `compare: failed` only compares
+# whether the task failed. `python_differs: {before: VERSION, why: ...}`
+# skips the comparison on targets with an older Python.
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+file_cases:
+  # state=file
+  - name: file unchanged
+    args: {path: "{{ file_dir }}/file.txt", state: file}
+  - name: file mode octal
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}
+  - name: file mode as integer
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: 384}
+  - name: file mode symbolic
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: "u+x,g-r,o="}
+  - name: file mode invalid
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: "abc"}
+  - name: file mode check mode
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}
+    check_mode: true
+  - name: file mode without diff
+    args: {path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}
+    diff: false
+    builtin_differs: {before: "2.19", why: 'an older builtin returns the diff even without diff mode'}
+  - name: file missing
+    args: {path: "{{ file_dir }}/missing.txt", state: file}
+  - name: file is a directory
+    args: {path: "{{ file_dir }}/tree", state: file}
+  - name: file is a directory, with _original_basename
+    args: {path: "{{ file_dir }}/tree", state: file, _original_basename: a.txt, mode: "0600"}
+  - name: file through a symlink, followed
+    args: {path: "{{ file_dir }}/link.txt", state: file, mode: "0600"}
+  - name: file through a symlink, not followed
+    args: {path: "{{ file_dir }}/link.txt", state: file, follow: false}
+  - name: file through a broken symlink
+    args: {path: "{{ file_dir }}/broken", state: file}
+  - name: file hard link
+    args: {path: "{{ file_dir }}/hard1", state: file, mode: "0640"}
+  - name: file owner and group unchanged
+    args: {path: "{{ file_dir }}/file.txt", state: file, owner: "{{ current_user }}", group: "{{ current_group }}"}
+  - name: file owner by uid
+    args: {path: "{{ file_dir }}/file.txt", state: file, owner: "{{ current_uid }}"}
+  - name: file group change
+    args: {path: "{{ file_dir }}/file.txt", state: file, group: "{{ other_group }}"}
+  - name: file unknown owner
+    args: {path: "{{ file_dir }}/file.txt", state: file, owner: no_such_user_xyz}
+  - name: file unknown group
+    args: {path: "{{ file_dir }}/file.txt", state: file, group: no_such_group_xyz}
+  - name: file unknown owner and group in check mode
+    args: {path: "{{ file_dir }}/file.txt", state: file, owner: no_such_user_xyz, group: no_such_group_xyz}
+    check_mode: true
+  - name: file unknown uid and gid in check mode
+    args: {path: "{{ file_dir }}/file.txt", state: file, owner: "987654", group: "987654"}
+    check_mode: true
+  - name: file SELinux options without SELinux
+    args: {path: "{{ file_dir }}/file.txt", state: file, setype: tmp_t, seuser: _default}
+  - name: file path from an environment variable
+    args: {path: "$FILE_TEST_DIR/file.txt", state: file, mode: "0600"}
+    environment: {FILE_TEST_DIR: "{{ file_dir }}"}
+  - name: file under a regular file
+    args: {path: "{{ file_dir }}/file.txt/inner", state: file}
+    builtin_differs: {before: "2.21", why: 'an older builtin treats a path under a file as absent'}
+
+  # Times
+  - name: modification time fixed
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "{{ fixed_time }}"}
+  - name: access time fixed
+    args: {path: "{{ file_dir }}/file.txt", state: file, access_time: "{{ fixed_time }}"}
+  - name: both times fixed
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
+  - name: times already as given
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "202001010000.00", access_time: "202001010000.00"}
+    environment: {TZ: UTC}
+  - name: times preserved
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: preserve, access_time: preserve}
+  - name: modification time now
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: now}
+  - name: both times now
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: now, access_time: now}
+  - name: modification time custom format
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "2021-03-04 05:06:07", modification_time_format: "%Y-%m-%d %H:%M:%S"}
+  - name: modification time 12-hour format with names
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "Thu Mar 4 2021 05:06 PM", modification_time_format: "%a %b %d %Y %I:%M %p"}
+  - name: modification time day of year
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "21-063", modification_time_format: "%y-%j"}
+  - name: modification time in a fixed time zone
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "{{ fixed_time }}"}
+    environment: {TZ: America/Mexico_City}
+  - name: modification time not matching the format
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "yesterday"}
+  - name: modification time with extra text
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "202103040506.07xyz"}
+  - name: modification time with a day the month doesn't have
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "202102300000.00"}
+    python_differs: {before: "3.14", why: 'older Pythons word the error differently'}
+  - name: modification time bad directive
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "2021", modification_time_format: "%Q"}
+  - name: modification time check mode
+    args: {path: "{{ file_dir }}/file.txt", state: file, modification_time: "{{ fixed_time }}"}
+    check_mode: true
+  - name: times on a followed symlink
+    args: {path: "{{ file_dir }}/link.txt", state: file, modification_time: "{{ fixed_time }}"}
+
+  # state=directory
+  - name: directory unchanged
+    args: {path: "{{ file_dir }}/tree", state: directory}
+  - name: directory mode
+    args: {path: "{{ file_dir }}/tree", state: directory, mode: "0700"}
+  - name: directory created
+    args: {path: "{{ file_dir }}/new", state: directory}
+  - name: directory created with parents and mode
+    args: {path: "{{ file_dir }}/new/a/b", state: directory, mode: "0750"}
+  - name: directory created with a symbolic mode
+    args: {path: "{{ file_dir }}/new/a", state: directory, mode: "u=rwx,go=rx"}
+  - name: directory created with a trailing slash
+    args: {path: "{{ file_dir }}/new/", state: directory}
+  - name: directory created in check mode
+    args: {path: "{{ file_dir }}/new/a", state: directory}
+    check_mode: true
+  - name: directory where a file is
+    args: {path: "{{ file_dir }}/file.txt", state: directory}
+  - name: directory under a file
+    args: {path: "{{ file_dir }}/file.txt/sub", state: directory}
+    builtin_differs: {before: "2.21", why: 'an older builtin treats a path under a file as absent'}
+  - name: directory through a symlink, followed
+    args: {path: "{{ file_dir }}/dirlink", state: directory, mode: "0700"}
+  - name: directory through a symlink, not followed
+    args: {path: "{{ file_dir }}/dirlink", state: directory, follow: false}
+  - name: directory recursive mode
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, mode: "u=rwX,g=rX,o="}
+  - name: directory recursive mode, not following links
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, mode: "0700", follow: false}
+  - name: directory recursive owner
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, owner: "{{ current_user }}", group: "{{ other_group }}"}
+  - name: directory recursive times
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
+    setup: rm tree/broken
+  - name: directory recursive times with a broken link
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, modification_time: "{{ fixed_time }}"}
+  - name: directory recursive in check mode
+    args: {path: "{{ file_dir }}/tree", state: directory, recurse: true, mode: "0700"}
+    check_mode: true
+  - name: directory recursive creates it
+    args: {path: "{{ file_dir }}/new", recurse: true}
+  - name: directory created with times
+    args: {path: "{{ file_dir }}/new", state: directory, modification_time: "{{ fixed_time }}"}
+  - name: directory created with parents and times
+    args: {path: "{{ file_dir }}/new/a", state: directory, modification_time: "{{ fixed_time }}"}
+    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
+  - name: recurse without state directory
+    args: {path: "{{ file_dir }}/file.txt", state: file, recurse: true}
+
+  # state=link
+  - name: link created, absolute src
+    args: {path: "{{ file_dir }}/new-link", src: "{{ file_dir }}/file.txt", state: link}
+  - name: link created, relative src
+    args: {path: "{{ file_dir }}/new-link", src: file.txt, state: link}
+  - name: link created in check mode
+    args: {path: "{{ file_dir }}/new-link", src: file.txt, state: link}
+    check_mode: true
+  - name: link to a missing src
+    args: {path: "{{ file_dir }}/new-link", src: nowhere, state: link}
+    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
+  - name: link to a missing src, forced
+    args: {path: "{{ file_dir }}/new-link", src: nowhere, state: link, force: true}
+  - name: link to a missing src, forced, not followed
+    args: {path: "{{ file_dir }}/new-link", src: nowhere, state: link, force: true, follow: false}
+  - name: link unchanged
+    args: {path: "{{ file_dir }}/link.txt", src: file.txt, state: link}
+  - name: link retargeted
+    args: {path: "{{ file_dir }}/link.txt", src: other.txt, state: link}
+  - name: link retargeted in check mode
+    args: {path: "{{ file_dir }}/link.txt", src: other.txt, state: link}
+    check_mode: true
+  - name: link without src, existing
+    args: {path: "{{ file_dir }}/link.txt", state: link, mode: "0600"}
+  - name: link without src, existing, not followed
+    args: {path: "{{ file_dir }}/link.txt", state: link, follow: false}
+  - name: link without src, missing
+    args: {path: "{{ file_dir }}/new-link", state: link}
+  - name: link over a file
+    args: {path: "{{ file_dir }}/other.txt", src: file.txt, state: link}
+  - name: link over a file, forced
+    args: {path: "{{ file_dir }}/other.txt", src: file.txt, state: link, force: true}
+  - name: link over a hard link, forced
+    args: {path: "{{ file_dir }}/hard2", src: file.txt, state: link, force: true}
+  - name: link over an empty directory
+    args: {path: "{{ file_dir }}/empty", src: file.txt, state: link}
+    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
+  - name: link over an empty directory, forced
+    args: {path: "{{ file_dir }}/empty", src: ../file.txt, state: link, force: true}
+  - name: link over a directory with files, forced
+    args: {path: "{{ file_dir }}/tree", src: file.txt, state: link, force: true}
+  - name: link with mode, followed
+    args: {path: "{{ file_dir }}/new-link", src: file.txt, state: link, mode: "0600"}
+  - name: link with owner, not followed
+    args: {path: "{{ file_dir }}/link.txt", src: file.txt, state: link, owner: "{{ current_user }}", follow: false}
+  - name: link to a directory
+    args: {path: "{{ file_dir }}/new-link", src: tree, state: link}
+  - name: link inside a missing directory
+    args: {path: "{{ file_dir }}/missing/new-link", src: "{{ file_dir }}/file.txt", state: link}
+  - name: link with times
+    args: {path: "{{ file_dir }}/new-link", src: file.txt, state: link, modification_time: "{{ fixed_time }}"}
+  - name: link replaced when the directory can't be written
+    args: {path: "{{ file_dir }}/ro/link", src: ../other.txt, state: link}
+    setup: mkdir ro && ln -s ../file.txt ro/link && chmod 0555 ro
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+
+  # state=hard
+  - name: hard link created
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/file.txt", state: hard}
+  - name: hard link created in check mode
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/file.txt", state: hard}
+    check_mode: true
+  - name: hard link unchanged
+    args: {path: "{{ file_dir }}/hard2", src: "{{ file_dir }}/hard1", state: hard}
+  - name: hard link without src, existing
+    args: {path: "{{ file_dir }}/hard2", state: hard, mode: "0600"}
+  - name: hard link without src, missing
+    args: {path: "{{ file_dir }}/new-hard", state: hard}
+  - name: hard link to a missing src
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/nowhere", state: hard}
+  - name: hard link to a different file
+    args: {path: "{{ file_dir }}/hard2", src: "{{ file_dir }}/file.txt", state: hard}
+  - name: hard link to a different file, forced
+    args: {path: "{{ file_dir }}/hard2", src: "{{ file_dir }}/file.txt", state: hard, force: true}
+  - name: hard link over a file
+    args: {path: "{{ file_dir }}/other.txt", src: "{{ file_dir }}/file.txt", state: hard}
+  - name: hard link over a file, forced
+    args: {path: "{{ file_dir }}/other.txt", src: "{{ file_dir }}/file.txt", state: hard, force: true}
+  - name: hard link over a symlink
+    args: {path: "{{ file_dir }}/link.txt", src: "{{ file_dir }}/other.txt", state: hard}
+  - name: hard link into a directory
+    args: {path: "{{ file_dir }}/tree", src: "{{ file_dir }}/file.txt", state: hard}
+  - name: hard link into a directory, already linked
+    args: {path: "{{ file_dir }}/tree", src: "{{ file_dir }}/file.txt", state: hard}
+    setup: ln file.txt tree/file.txt
+  - name: hard link with mode
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/file.txt", state: hard, mode: "0600"}
+  - name: hard link to a symlink, followed
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard}
+    builtin_differs: {before: "2.18", why: 'an older builtin links the symlink itself'}
+  - name: hard link to a symlink, not followed
+    args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard, follow: false}
+    python_differs: {before: "3.14", why: 'os.link links the symlink itself before Python 3.14 on Linux'}
+  - name: hard link inside a missing directory
+    args: {path: "{{ file_dir }}/missing/new-hard", src: "{{ file_dir }}/file.txt", state: hard}
+
+  # state=touch
+  - name: touch a new file
+    args: {path: "{{ file_dir }}/new.txt", state: touch}
+  - name: touch a new file with mode
+    args: {path: "{{ file_dir }}/new.txt", state: touch, mode: "0600"}
+  - name: touch a new file with fixed times
+    args: {path: "{{ file_dir }}/new.txt", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
+  - name: touch a new file, times preserved
+    args: {path: "{{ file_dir }}/new.txt", state: touch, modification_time: preserve, access_time: preserve}
+  - name: touch a new file in check mode
+    args: {path: "{{ file_dir }}/new.txt", state: touch}
+    check_mode: true
+  - name: touch an existing file
+    args: {path: "{{ file_dir }}/file.txt", state: touch}
+  - name: touch an existing file, times preserved
+    args: {path: "{{ file_dir }}/file.txt", state: touch, modification_time: preserve, access_time: preserve}
+  - name: touch an existing file with one fixed time
+    args: {path: "{{ file_dir }}/file.txt", state: touch, modification_time: "{{ fixed_time }}"}
+  - name: touch an existing file in check mode
+    args: {path: "{{ file_dir }}/file.txt", state: touch}
+    check_mode: true
+  - name: touch a directory
+    args: {path: "{{ file_dir }}/tree", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
+  - name: touch through a symlink
+    args: {path: "{{ file_dir }}/link.txt", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
+  - name: touch in a missing directory
+    args: {path: "{{ file_dir }}/missing/new.txt", state: touch}
+    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
+  - name: touch a new file with an unknown owner
+    args: {path: "{{ file_dir }}/new.txt", state: touch, owner: no_such_user_xyz}
+  - name: touch a new file with a bad time
+    args: {path: "{{ file_dir }}/new.txt", state: touch, modification_time: "soon"}
+
+  # state=absent
+  - name: absent file
+    args: {path: "{{ file_dir }}/file.txt", state: absent}
+  - name: absent missing
+    args: {path: "{{ file_dir }}/missing.txt", state: absent}
+  - name: absent symlink
+    args: {path: "{{ file_dir }}/link.txt", state: absent}
+  - name: absent broken symlink
+    args: {path: "{{ file_dir }}/broken", state: absent}
+  - name: absent symlink to a directory
+    args: {path: "{{ file_dir }}/dirlink", state: absent}
+  - name: absent directory tree
+    args: {path: "{{ file_dir }}/tree", state: absent}
+  - name: absent directory tree in check mode
+    args: {path: "{{ file_dir }}/tree", state: absent}
+    check_mode: true
+  - name: absent empty directory
+    args: {path: "{{ file_dir }}/empty", state: absent}
+  - name: absent hard link
+    args: {path: "{{ file_dir }}/hard2", state: absent}
+  - name: absent ignores mode
+    args: {path: "{{ file_dir }}/file.txt", state: absent, mode: "0600"}
+  - name: absent in a read-only directory
+    args: {path: "{{ file_dir }}/ro/file", state: absent}
+    setup: mkdir ro && touch ro/file && chmod 0555 ro
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
+  - name: absent tree with a read-only subdirectory
+    args: {path: "{{ file_dir }}/tree", state: absent}
+    setup: chmod 0555 tree/sub/deep
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+
+  # Default state
+  - name: no state, existing file
+    args: {path: "{{ file_dir }}/file.txt", mode: "0600"}
+  - name: no state, existing directory
+    args: {path: "{{ file_dir }}/tree", mode: "0700"}
+  - name: no state, existing link
+    args: {path: "{{ file_dir }}/link.txt"}
+  - name: no state, existing hard link
+    args: {path: "{{ file_dir }}/hard1"}
+  - name: no state, missing
+    args: {path: "{{ file_dir }}/missing.txt"}
+
+  # Other options
+  - name: src without link or hard
+    args: {path: "{{ file_dir }}/file.txt", src: "{{ file_dir }}/other.txt", state: file}
+  - name: diff peek on text
+    args: {path: "{{ file_dir }}/file.txt", _diff_peek: true}
+  - name: diff peek on binary
+    args: {path: "{{ file_dir }}/binary.bin", _diff_peek: true}
+  - name: diff peek on a missing file
+    args: {path: "{{ file_dir }}/missing.txt", _diff_peek: true}
+  - name: diff peek on a directory
+    args: {path: "{{ file_dir }}/tree", _diff_peek: true}
+  - name: path through a non-searchable directory
+    args: {path: "{{ file_dir }}/locked/inner", state: touch}
+    setup: mkdir locked && chmod 0 locked
+    compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
+    builtin_differs: {before: "2.21", why: 'an older builtin doesn''t warn about the permissions'}
+  - name: name alias
+    args: {name: "{{ file_dir }}/file.txt", state: file}
+  - name: dest alias
+    args: {dest: "{{ file_dir }}/file.txt", state: file}
+  - name: invalid state
+    args: {path: "{{ file_dir }}/file.txt", state: maybe}
+  - name: missing path
+    args: {state: file}
+  - name: unsupported option
+    args: {path: "{{ file_dir }}/file.txt", bogus: true}
+  - name: invalid boolean
+    args: {path: "{{ file_dir }}/file.txt", recurse: maybe}
+  - name: unsafe_writes accepted
+    args: {path: "{{ file_dir }}/file.txt", state: file, unsafe_writes: true}

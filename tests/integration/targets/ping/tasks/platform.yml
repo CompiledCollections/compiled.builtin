@@ -1,0 +1,39 @@
+# compiled_builtin_platform set by hand (as from inventory, when facts and
+# uname aren't available) is used as given when valid, and rejected with the
+# list of valid values, plus a suggestion for uname-style values, when not.
+- name: A valid compiled_builtin_platform is used
+  compiled.builtin.ping:
+  vars:
+    compiled_builtin_platform: linux_amd64
+  register: valid
+
+- name: A templated compiled_builtin_platform is used
+  compiled.builtin.ping:
+  vars:
+    goarch: amd64
+    compiled_builtin_platform: "linux_{{ goarch }}"
+  register: templated
+
+- name: A uname-style compiled_builtin_platform is rejected
+  compiled.builtin.ping:
+  vars:
+    compiled_builtin_platform: linux-x86_64
+  register: uname_style
+  ignore_errors: true
+
+- name: An unknown compiled_builtin_platform is rejected
+  compiled.builtin.ping:
+  vars:
+    compiled_builtin_platform: plan9_amd64
+  register: unknown
+  ignore_errors: true
+
+- name: Check the compiled_builtin_platform results
+  ansible.builtin.assert:
+    that:
+      - valid.ping == 'pong'
+      - templated.ping == 'pong'
+      - uname_style is failed
+      - "uname_style.msg is search(\"^Invalid compiled_builtin_platform 'linux-x86_64': .* \\\\(did you mean 'linux_amd64'\\\\?\\\\)\\\\. Valid values: aix_ppc64, .*linux_amd64, \")"
+      - unknown is failed
+      - "unknown.msg is search(\"^Invalid compiled_builtin_platform 'plan9_amd64': [^(]*\\\\. Valid values: \")"

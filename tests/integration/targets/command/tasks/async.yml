@@ -1,0 +1,32 @@
+# Async works like the builtin: fire and forget followed by async_status,
+# and async with polling. (Ansible's async wrapper needs Python on the target.)
+- name: Run in the background
+  compiled.builtin.command:
+    cmd: sh -c 'sleep 1; echo done'
+  async: 30
+  poll: 0
+  register: job
+
+- name: Wait for it
+  ansible.builtin.async_status:
+    jid: "{{ job.ansible_job_id }}"
+  register: job_result
+  until: job_result.finished
+  retries: 30
+  delay: 1
+
+- name: Fire and forget finished like the builtin
+  ansible.builtin.assert:
+    that:
+      - job_result.stdout == 'done'
+      - job_result.rc == 0
+
+- name: Run async with polling
+  compiled.builtin.command:
+    cmd: echo polled
+  async: 30
+  poll: 1
+  register: polled
+
+- ansible.builtin.assert:
+    that: polled.stdout == 'polled'

@@ -1,0 +1,129 @@
+# Unit, sanity and integration tests (tests/build.py), on every
+# ansible-core version the collection supports. Runs on pushes to dev and
+# main and on pull requests to them; make the "CI result" check required in
+# main's branch protection.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # ansible-test needs the collection at ansible_collections/<namespace>/<name>.
+  COLLECTION: ansible_collections/compiled/builtin
+  # Debian/Ubuntu's upx; tests/build.py refuses to ship unpacked binaries.
+  UPX_PACKAGE: upx-ucl
+
+jobs:
+  unit:
+    name: Unit (Go ${{ matrix.go }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest Go the README promises for runtime compiles, and current.
+        go: ['1.22', stable]
+    defaults:
+      run:
+        working-directory: ${{ env.COLLECTION }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ${{ env.COLLECTION }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache: false  # no dependencies (no go.sum) to cache
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: tests/README.md is up to date
+        run: python3 tests/build.py testdocs --check
+      - name: go vet and go test
+        run: python3 tests/build.py unit
+
+  sanity:
+    name: Sanity (ansible-core ${{ matrix.ansible }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: &versions
+          - {ansible: '2.16', python: '3.12'}
+          - {ansible: '2.17', python: '3.12'}
+          - {ansible: '2.18', python: '3.12'}
+          - {ansible: '2.19', python: '3.12'}
+          - {ansible: '2.20', python: '3.12'}
+          - {ansible: '2.21', python: '3.14'}
+    defaults:
+      run:
+        working-directory: ${{ env.COLLECTION }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ${{ env.COLLECTION }}
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install ansible-core ${{ matrix.ansible }}
+        run: python3 -m pip install "ansible-core~=${{ matrix.ansible }}.0"
+      - name: ansible-test sanity
+        run: python3 tests/build.py sanity
+
+  integration:
+    name: Integration (ansible-core ${{ matrix.ansible }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: *versions
+    defaults:
+      run:
+        working-directory: ${{ env.COLLECTION }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: ${{ env.COLLECTION }}
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install UPX
+        run: sudo apt-get update && sudo apt-get install -y "$UPX_PACKAGE"
+      - name: Install ansible-core ${{ matrix.ansible }}
+        run: python3 -m pip install "ansible-core~=${{ matrix.ansible }}.0"
+      - name: Build, then ansible-test integration
+        run: python3 tests/build.py integration
+      - name: Keep the test output when it fails
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: integration-${{ matrix.ansible }}
+          path: ${{ env.COLLECTION }}/tests/output/
+          if-no-files-found: ignore
+
+  # One check to require in branch protection, whatever the matrix becomes.
+  result:
+    name: CI result
+    if: always()
+    needs: [unit, sanity, integration]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All jobs passed
+        run: |
+          [ "${{ needs.unit.result }}" = success ]
+          [ "${{ needs.sanity.result }}" = success ]
+          [ "${{ needs.integration.result }}" = success ]
