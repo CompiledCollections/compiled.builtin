@@ -24,7 +24,7 @@ integration tests check this by running both side by side.
 
 ## Requirements
 
-ansible-core 2.16 or later, the version Ansible Automation Platform 2.5 ships.
+ansible-core 2.16 or late.
 The targets need no Python (except for async tasks, see below).
 
 Binaries are named `<module>_<GOOS>_<GOARCH>`, Go's names for the target
@@ -158,7 +158,23 @@ tests/build.py               Build and test script
 1. The action plugin works out the target's platform from gathered facts
    (`ansible_facts.system` and `ansible_facts.architecture`), or by running
    `uname -sm` when facts are not gathered. It caches the result in the
-   `compiled_builtin_platform` fact.
+   `compiled_builtin_platform` fact, which you may set from inventory if 
+   fact gathering isn't available.
+
+Platform names come for Go (GOARCH and GOOS) Here are the possible values:
+
+  - linux_amd64
+  - linux_arm64
+  - linux_arm
+  - linux_386
+  - linux_ppc64le
+  - linux_s390x
+  - linux_riscv64
+  - darwin_arm64 / darwin_amd64
+  - freebsd_amd64, openbsd_amd64, netbsd_amd64 (or _arm64)
+  - solaris_amd64
+  - aix_ppc64
+
 2. If `plugins/modules/<module>_<goos>_<goarch>` exists, it runs that.
 3. Otherwise it runs `go build` on the controller and caches the binary in
    `~/.cache/ansible/compiled.builtin/<source hash>/`. Set
