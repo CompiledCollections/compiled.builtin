@@ -37,14 +37,14 @@ jobs:
       run:
         working-directory: ${{ env.COLLECTION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: ${{ env.COLLECTION }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
           cache: false  # no dependencies (no go.sum) to cache
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: tests/README.md is up to date
@@ -69,10 +69,10 @@ jobs:
       run:
         working-directory: ${{ env.COLLECTION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: ${{ env.COLLECTION }}
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Install ansible-core ${{ matrix.ansible }}
@@ -91,14 +91,14 @@ jobs:
       run:
         working-directory: ${{ env.COLLECTION }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           path: ${{ env.COLLECTION }}
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: stable
           cache: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
       - name: Install UPX
@@ -109,7 +109,7 @@ jobs:
         run: python3 tests/build.py integration
       - name: Keep the test output when it fails
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: integration-${{ matrix.ansible }}
           path: ${{ env.COLLECTION }}/tests/output/
