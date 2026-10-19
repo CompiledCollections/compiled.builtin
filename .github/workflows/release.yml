@@ -1,0 +1,71 @@
+# Builds the collection tarball, with freshly compiled linux_amd64 binaries,
+# when a version tag (v0.3.0, matching galaxy.yml's version) is pushed on
+# main, and attaches it to a GitHub release. Also publishes it to Ansible
+# Galaxy when the GALAXY_API_KEY secret is set.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write  # create the release
+
+env:
+  COLLECTION: ansible_collections/compiled/builtin
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: ${{ env.COLLECTION }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: ${{ env.COLLECTION }}
+          fetch-depth: 0  # to check the tag is on main
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+          cache: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install ansible-core and UPX
+        run: |
+          python3 -m pip install ansible-core
+          sudo apt-get update && sudo apt-get install -y upx-ucl
+
+      - name: Check the tag
+        run: |
+          version=$(python3 -c "import yaml; print(yaml.safe_load(open('galaxy.yml'))['version'])")
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match galaxy.yml version $version"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag $GITHUB_REF_NAME isn't on main"; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Build the binaries and the tarball
+        run: |
+          python3 tests/build.py build
+          ansible-galaxy collection build --output-path "$RUNNER_TEMP/dist"
+
+      - name: Smoke test the tarball
+        run: |
+          ansible-galaxy collection install -p "$RUNNER_TEMP/installed" "$RUNNER_TEMP"/dist/*.tar.gz
+          ANSIBLE_COLLECTIONS_PATH="$RUNNER_TEMP/installed" \
+            ansible localhost -m compiled.builtin.ping -e compiled_builtin_platform=linux_amd64
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP"/dist/*.tar.gz --title "compiled.builtin $VERSION" --generate-notes
+
+      - name: Publish to Ansible Galaxy
+        env:
+          GALAXY_API_KEY: ${{ secrets.GALAXY_API_KEY }}
+        if: env.GALAXY_API_KEY != ''
+        run: ansible-galaxy collection publish "$RUNNER_TEMP"/dist/*.tar.gz --api-key "$GALAXY_API_KEY"

@@ -67,6 +67,7 @@ build_ignore:
   - '*/testdata'
   # Repository files and earlier build artifacts
   - .gitignore
+  - .github
   - '*.tar.gz'
 
 # A dict controlling use of manifest directives used in building the collection artifact. The key 'directives' is a
