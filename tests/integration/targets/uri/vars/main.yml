@@ -1,0 +1,334 @@
+uri_dir: "{{ output_dir }}/uri"
+dest_dir: "{{ uri_dir }}/dest"
+
+# Each case runs ansible.builtin.uri and compiled.builtin.uri with the same
+# arguments (and environment) against the test server from
+# setup_http_server; the results must match, apart from the response Date
+# and timing. Cases with `dest: true` start from an empty dest_dir (or one
+# holding `dest_file`) and also compare the files left there. `compare:
+# failed` only compares whether the task failed.
+#
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently;
+# `python_differs` the same for the target's Python version, since the
+# builtin's behaviour also comes from Python's urllib and ssl. The compiled
+# module always behaves like the current builtin on current Python, so in
+# those cases the case runs but isn't compared.
+uri_cases:
+  # Requests and methods
+  - name: GET with return_content
+    args: {url: "{{ http_url }}/echo?a=1&b=two", return_content: true}
+  - name: GET a JSON response
+    args: {url: "{{ http_url }}/echo"}
+  - name: HEAD
+    args: {url: "{{ http_url }}/echo", method: HEAD}
+  - name: method in lowercase
+    args: {url: "{{ http_url }}/echo", method: put, body: data}
+  - name: custom method
+    args: {url: "{{ http_url }}/echo", method: PURGE}
+  - name: invalid method
+    args: {url: "{{ http_url }}/echo", method: "GET POST"}
+  - name: DELETE
+    args: {url: "{{ http_url }}/echo", method: DELETE}
+  - name: POST without a body
+    args: {url: "{{ http_url }}/echo", method: POST}
+
+  # Bodies
+  - name: raw string body
+    args: {url: "{{ http_url }}/echo", method: POST, body: "raw body ü"}
+  - name: raw body with a content type
+    args: {url: "{{ http_url }}/echo", method: POST, body: "<a/>", headers: {Content-Type: application/xml}}
+  - name: JSON from a mapping
+    args:
+      url: "{{ http_url }}/echo"
+      method: POST
+      body_format: json
+      body: {z: 1, a: [true, false, null], f: 1.5, big: 12345678901234567890, s: "ünïcode ✓ \"q\"", nested: {k: v}}
+  - name: JSON from a list
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: json, body: [1, "two", {three: 3}]}
+  - name: JSON from a string
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: json, body: '{"pre": "formatted"}'}
+  - name: JSON without a body
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: json}
+  - name: JSON keeps a lowercase content-type header
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: json, body: {a: 1}, headers: {content-type: application/vnd.test+json}}
+  - name: form-urlencoded from a mapping
+    args:
+      url: "{{ http_url }}/echo"
+      method: POST
+      body_format: form-urlencoded
+      body: {name: "a b&c=d", unicode: "é✓", list: [1, two], none: null, flag: true, num: 3}
+  - name: form-urlencoded from pairs
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: [[a, 1], [b, [2, 3]], [c, "x y"]]}
+  - name: form-urlencoded from a string
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: "already=encoded"}
+  - name: form-urlencoded with a short pair
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: [[a]]}
+  - name: form-urlencoded with a long pair
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: [[a, b, c]]}
+    python_differs: {before: "3.14", why: 'Python before 3.14 says "too many values to unpack (expected 2)"'}
+  - name: multipart fields
+    args:
+      url: "{{ http_url }}/echo"
+      method: POST
+      body_format: form-multipart
+      body:
+        text: plain value
+        inline: {content: "inline\ncontent", filename: inline.txt, mime_type: text/plain}
+        guessed: {content: '{"k": 1}', filename: data.json}
+        unnamed: {content: just content}
+  - name: multipart file from the controller
+    args:
+      url: "{{ http_url }}/echo"
+      method: POST
+      body_format: form-multipart
+      body: {file: {filename: upload.txt}, file7: {filename: upload.txt, multipart_encoding: 7or8bit, mime_type: text/x-test}}
+    builtin_differs: {before: "2.19", why: 'it has no multipart_encoding and always uses base64'}
+  - name: multipart file on the target
+    args:
+      url: "{{ http_url }}/echo"
+      method: POST
+      body_format: form-multipart
+      remote_src: true
+      body: {file: {filename: "{{ uri_dir }}/remote.txt"}}
+  - name: multipart value of the wrong type
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {n: 5}}
+  - name: multipart part without filename or content
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {p: {mime_type: text/plain}}}
+  - name: multipart with an unknown encoding
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {f: {filename: upload.txt, multipart_encoding: base32}}}
+    builtin_differs: {before: "2.19", why: 'it has no multipart_encoding and ignores it'}
+  - name: multipart body that is not a mapping
+    args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: "a=b"}
+  - name: src from the controller
+    args: {url: "{{ http_url }}/echo", method: PUT, src: upload.txt}
+  - name: src on the target
+    args: {url: "{{ http_url }}/echo", method: PUT, src: "{{ uri_dir }}/remote.txt", remote_src: true}
+  - name: src on the target that does not exist
+    args: {url: "{{ http_url }}/echo", method: PUT, src: "{{ uri_dir }}/missing.txt", remote_src: true}
+  - name: body and src are mutually exclusive
+    args: {url: "{{ http_url }}/echo", method: PUT, src: upload.txt, body: x}
+
+  # Headers
+  - name: custom headers
+    args: {url: "{{ http_url }}/echo", headers: {X-Custom-Header: value, x-lower: lower, X-Number: 42, X-Bool: true}}
+  - name: http_agent
+    args: {url: "{{ http_url }}/echo", http_agent: my-agent/1.0}
+  - name: force sends cache-control
+    args: {url: "{{ http_url }}/echo", force: true}
+    builtin_differs: {before: "2.17", why: 'it does not pass force on, so no cache-control header is sent'}
+  - name: repeated response headers
+    args: {url: "{{ http_url }}/dup-headers"}
+  - name: response without a Content-Length
+    args: {url: "{{ http_url }}/no-length", return_content: true}
+  - name: relative Location on a 201
+    args: {url: "{{ http_url }}/location?to=created/1", status_code: [201]}
+    builtin_differs: {before: "2.18", why: 'it resolves Location by appending it to the URL'}
+
+  # Status codes
+  - name: status not in status_code
+    args: {url: "{{ http_url }}/status/201"}
+  - name: status in status_code
+    args: {url: "{{ http_url }}/status/201", status_code: [200, 201]}
+  - name: accepted error status
+    args: {url: "{{ http_url }}/status/404", status_code: [404]}
+  - name: accepted error status with return_content
+    args: {url: "{{ http_url }}/status/404", status_code: [404], return_content: true}
+  - name: server error with return_content
+    args: {url: "{{ http_url }}/status/500", return_content: true}
+  - name: custom reason phrase
+    args: {url: "{{ http_url }}/status/418?reason=Short%20and%20stout"}
+  - name: no content
+    args: {url: "{{ http_url }}/status/204", status_code: [204]}
+  - name: not modified
+    args: {url: "{{ http_url }}/status/304", status_code: [304]}
+
+  # Content types
+  - name: application/json
+    args: {url: "{{ http_url }}/content?ct=application/json&body={{ '{\"a\": [1, 2]}' | urlencode }}"}
+  - name: +json suffix
+    args: {url: "{{ http_url }}/content?ct=application/vnd.api%2Bjson&body={{ '{\"b\": true}' | urlencode }}"}
+  - name: javascript is parsed as JSON
+    args: {url: "{{ http_url }}/content?ct=text/javascript&body=%5B1%2C%202%5D"}
+  - name: invalid JSON
+    args: {url: "{{ http_url }}/content?ct=application/json&body=not%20json"}
+  - name: latin-1 charset
+    args: {url: "{{ http_url }}/content?ct=text/plain%3B%20charset%3Diso-8859-1&b64=Y2Fm6Q%3D%3D", return_content: true}
+  - name: empty content type
+    args: {url: "{{ http_url }}/content?ct=&body=x", return_content: true}
+  - name: gzip is decompressed
+    args: {url: "{{ http_url }}/gzip"}
+  - name: gzip left compressed
+    args: {url: "{{ http_url }}/gzip", decompress: false}
+
+  # Redirects
+  - name: 301 GET
+    args: {url: "{{ http_url }}/redirect/301"}
+  - name: 302 GET
+    args: {url: "{{ http_url }}/redirect/302"}
+  - name: 303 GET
+    args: {url: "{{ http_url }}/redirect/303"}
+  - name: 307 GET
+    args: {url: "{{ http_url }}/redirect/307"}
+  - name: 308 GET
+    args: {url: "{{ http_url }}/redirect/308"}
+  - name: safe does not redirect a POST
+    args: {url: "{{ http_url }}/redirect/302", method: POST, body: data}
+  - name: all turns a 302 POST into a GET
+    args: {url: "{{ http_url }}/redirect/302", method: POST, body: data, follow_redirects: all}
+  - name: all turns a 301 POST into a GET
+    args: {url: "{{ http_url }}/redirect/301", method: POST, body: data, follow_redirects: all}
+  - name: all keeps a 307 POST
+    args: {url: "{{ http_url }}/redirect/307", method: POST, body: data, follow_redirects: all}
+  - name: all keeps a 308 PUT
+    args: {url: "{{ http_url }}/redirect/308", method: PUT, body: data, follow_redirects: all}
+  - name: none
+    args: {url: "{{ http_url }}/redirect/302", follow_redirects: none}
+  - name: "no is deprecated"
+    args: {url: "{{ http_url }}/redirect/302", follow_redirects: "no"}
+    builtin_differs: {before: "2.18", why: 'it does not deprecate yes and no'}
+  - name: "yes is deprecated"
+    args: {url: "{{ http_url }}/redirect/302", follow_redirects: "yes"}
+    builtin_differs: {before: "2.18", why: 'it does not deprecate yes and no'}
+  - name: urllib2 turns a POST into a GET
+    args: {url: "{{ http_url }}/redirect/302", method: POST, body: data, follow_redirects: urllib2}
+  - name: urllib2 does not redirect a 307 POST
+    args: {url: "{{ http_url }}/redirect/307", method: POST, body: data, follow_redirects: urllib2}
+  - name: relative redirect
+    args: {url: "{{ http_url }}/redirect/302?to=../echo%3Fr=1"}
+  - name: redirect loop
+    args: {url: "{{ http_url }}/redirect-loop"}
+  - name: headers follow redirects
+    args: {url: "{{ http_url }}/redirect/302", headers: {Authorization: Bearer token, X-Kept: yes}}
+  - name: unredirected headers
+    args: {url: "{{ http_url }}/redirect/302", headers: {Authorization: Bearer token, X-Kept: yes}, unredirected_headers: [authorization]}
+  - name: redirect to HTTPS
+    args: {url: "{{ http_url }}/redirect/302?to={{ https_url | urlencode }}/echo", validate_certs: false}
+
+  # Authentication
+  - name: basic auth after a 401
+    args: {url: "{{ http_url }}/basic-auth/user/pass", url_username: user, url_password: pass}
+  - name: basic auth with a wrong password
+    args: {url: "{{ http_url }}/basic-auth/user/pass", url_username: user, url_password: wrong}
+  - name: force_basic_auth
+    args: {url: "{{ http_url }}/basic-auth/user/pass", url_username: user, url_password: pass, force_basic_auth: true}
+  - name: user and password aliases
+    args: {url: "{{ http_url }}/basic-auth/user/pass", user: user, password: pass}
+  - name: credentials in the URL are masked
+    args: {url: "{{ http_url | replace('http://', 'http://user:pass@') }}/basic-auth/user/pass"}
+  - name: digest auth
+    args: {url: "{{ http_url }}/digest-auth/auth/user/pass", url_username: user, url_password: pass}
+  - name: digest auth with SHA-256
+    args: {url: "{{ http_url }}/digest-auth/auth/user/pass/SHA-256", url_username: user, url_password: pass}
+    python_differs: {before: "3.14", why: 'urllib before Python 3.14 has no SHA-256 digest'}
+  - name: digest auth without qop
+    args: {url: "{{ http_url }}/digest-auth/none/user/pass", url_username: user, url_password: pass}
+  - name: digest auth with a wrong password
+    args: {url: "{{ http_url }}/digest-auth/auth/user/pass", url_username: user, url_password: wrong}
+  - name: password is masked in the result
+    args: {url: "{{ http_url }}/echo?shown=s3cretpw", url_username: user, url_password: s3cretpw, force_basic_auth: true, return_content: true}
+  - name: credentials from netrc
+    args: {url: "{{ http_url }}/basic-auth/nuser/npass"}
+    environment: {NETRC: "{{ uri_dir }}/netrc"}
+  - name: netrc ignored
+    args: {url: "{{ http_url }}/basic-auth/nuser/npass", use_netrc: false}
+    environment: {NETRC: "{{ uri_dir }}/netrc"}
+
+  # Cookies
+  - name: cookies set by the response
+    args: {url: "{{ http_url }}/cookies/set?session=abc&theme=dark"}
+  - name: cookies sent after a redirect
+    args: {url: "{{ http_url }}/cookies/redirect?session=abc"}
+
+  # Connections
+  - name: timeout
+    args: {url: "{{ http_url }}/delay/3", timeout: 1}
+  - name: connection refused
+    args: {url: "{{ closed_url }}/echo"}
+  - name: unknown URL scheme
+    args: {url: "xyz://host/echo"}
+  - name: URL without a scheme
+    args: {url: "host/echo"}
+  - name: URL with a space
+    args: {url: "{{ http_url }}/echo?a b"}
+  - name: unix socket
+    args: {url: "http://localhost/echo", unix_socket: "{{ http_socket }}"}
+  - name: unix socket that does not exist
+    args: {url: "http://localhost/echo", unix_socket: "{{ uri_dir }}/missing.sock"}
+  - name: through a proxy
+    args: {url: "{{ http_url }}/echo"}
+    environment: {http_proxy: "{{ http_url }}"}
+  - name: proxy disabled by use_proxy
+    args: {url: "{{ http_url }}/echo", use_proxy: false}
+    environment: {http_proxy: "{{ http_url }}"}
+  - name: proxy bypassed by no_proxy
+    args: {url: "{{ http_url }}/echo"}
+    environment: {http_proxy: "{{ http_url }}", no_proxy: "127.0.0.1"}
+
+  # TLS
+  - name: unknown certificate authority
+    args: {url: "{{ https_url }}/echo"}
+  - name: validate_certs false
+    args: {url: "{{ https_url }}/echo", validate_certs: false}
+  - name: ca_path
+    args: {url: "{{ https_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem"}
+  - name: ca_path that does not exist
+    args: {url: "{{ https_url }}/echo", ca_path: "{{ uri_dir }}/missing.pem"}
+    python_differs: {before: "3.14", why: 'Python before 3.14 adds the file name to the error'}
+  - name: client certificate required
+    args: {url: "{{ mtls_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem"}
+  - name: client certificate and key
+    args: {url: "{{ mtls_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem", client_cert: "{{ http_server_dir }}/client.pem", client_key: "{{ http_server_dir }}/client.key"}
+  - name: client certificate with its key in one file
+    args: {url: "{{ mtls_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem", client_cert: "{{ http_server_dir }}/client-combined.pem"}
+  - name: ciphers
+    args: {url: "{{ https_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem", ciphers: [ECDHE-RSA-AES128-GCM-SHA256, ECDHE-RSA-AES256-GCM-SHA384]}
+  - name: unknown cipher
+    args: {url: "{{ https_url }}/echo", ca_path: "{{ http_server_dir }}/ca.pem", ciphers: [NO-SUCH-CIPHER]}
+
+  # Downloads
+  - name: download to a file
+    args: {url: "{{ http_url }}/download/file.bin", dest: "{{ dest_dir }}/saved.bin"}
+    dest: true
+  - name: download to a directory, name from Content-Disposition
+    args: {url: "{{ http_url }}/download/file.bin?cd=disposed.txt", dest: "{{ dest_dir }}"}
+    dest: true
+  - name: download to a directory, name from the URL
+    args: {url: "{{ http_url }}/download/from-url.txt", dest: "{{ dest_dir }}"}
+    dest: true
+  - name: download to a directory, no name in the URL
+    args: {url: "{{ http_url }}/echo/", dest: "{{ dest_dir }}"}
+    dest: true
+  - name: existing file sends If-Modified-Since
+    args: {url: "{{ http_url }}/download/file.bin", dest: "{{ dest_dir }}/saved.bin", status_code: [200, 304]}
+    dest: true
+    dest_file: saved.bin
+  - name: download with a mode
+    args: {url: "{{ http_url }}/download/file.bin", dest: "{{ dest_dir }}/saved.bin", mode: "0600"}
+    dest: true
+  - name: download that fails
+    args: {url: "{{ http_url }}/status/404", dest: "{{ dest_dir }}/saved.bin"}
+    dest: true
+
+  # creates / removes
+  - name: creates exists
+    args: {url: "{{ http_url }}/echo", creates: "{{ uri_dir }}/remote.txt"}
+  - name: creates missing
+    args: {url: "{{ http_url }}/echo", creates: "{{ uri_dir }}/missing.txt"}
+  - name: removes missing
+    args: {url: "{{ http_url }}/echo", removes: "{{ uri_dir }}/missing.txt"}
+
+  # Modes and arguments
+  - name: check mode is not supported
+    args: {url: "{{ http_url }}/echo"}
+    check_mode: true
+    builtin_differs: {before: "2.17", why: 'the module, not the action, reports the missing check mode support'}
+  - name: unsupported option
+    args: {url: "{{ http_url }}/echo", bogus: 1}
+  - name: invalid body_format
+    args: {url: "{{ http_url }}/echo", body_format: xml}
+  - name: url is required
+    args: {method: GET}
+    builtin_differs: {before: "2.19", why: 'it fails with an internal error instead of validating url'}
+  - name: status_code must be integers
+    args: {url: "{{ http_url }}/echo", status_code: [abc]}

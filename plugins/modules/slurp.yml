@@ -1,0 +1,74 @@
+DOCUMENTATION:
+  module: slurp
+  short_description: Slurps a file from remote nodes
+  description:
+    - Compiled Go replacement for M(ansible.builtin.slurp), with the same options and results.
+      It does not need Python on the target.
+    - This module works like M(ansible.builtin.fetch). It is used for fetching a base64-encoded blob containing
+      the data in a remote file.
+  version_added: 1.0.0
+  options:
+    src:
+      description:
+        - The file on the remote system to fetch. This I(must) be a file, not a directory.
+      type: path
+      required: true
+      aliases: [path]
+    armor:
+      description:
+        - To safely deliver the data requested, armor it by base64 encoding it.
+        - This is mainly done to avoid issues with binary data or to preserve non-UTF-8 encodings,
+          as the content will be converted to UTF-8 due to the JSON transport used.
+      type: bool
+      default: true
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+  attributes:
+    check_mode:
+      support: full
+    diff_mode:
+      support: none
+    platform:
+      platforms: posix
+  notes:
+    - This module returns an 'in memory' base64 encoded version of the file, take
+      into account that this will require at least twice the RAM as the original file size.
+  seealso:
+    - module: ansible.builtin.slurp
+    - module: ansible.builtin.fetch
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Find out what the remote machine's mounts are
+    compiled.builtin.slurp:
+      src: /proc/mounts
+    register: mounts
+
+  - name: Print returned information
+    ansible.builtin.debug:
+      msg: "{{ mounts['content'] | b64decode }}"
+
+  - name: Find out what the remote machine's mounts are, no armor
+    compiled.builtin.slurp:
+      src: /proc/mounts
+      armor: false
+    register: mounts
+
+RETURN:
+  content:
+    description: Encoded file content
+    returned: success
+    type: str
+    sample: "MjE3OQo="
+  encoding:
+    description: Current encoding of the file content, it can be C(base64)
+      or C(UTF-8) depending on the value of the O(armor) option.
+    returned: success
+    type: str
+    sample: "base64"
+  source:
+    description: Actual path of file slurped
+    returned: success
+    type: str
+    sample: "/var/run/sshd.pid"

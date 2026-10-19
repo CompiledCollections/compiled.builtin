@@ -1,0 +1,167 @@
+cmd_dir: "{{ output_dir }}/command"
+
+# Each case runs ansible.builtin.command and compiled.builtin.command with the
+# same arguments (and check_mode/environment); the results must match, apart
+# from timing values.
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+command_cases:
+  # Ways to give the command
+  - name: cmd string
+    args: {cmd: echo hello world}
+  - name: cmd with quoting
+    args: {cmd: "echo 'single quoted' \"double quoted\" back\\ slashed \"esc\\\"aped\""}
+  - name: argv list
+    args: {argv: [echo, hello world, "", "--x=1"]}
+  - name: argv elements are converted to strings
+    args: {argv: [echo, 1, true, 2.5]}
+  - name: raw params
+    args: {_raw_params: echo raw}
+  - name: unclosed quote
+    args: {cmd: "echo 'oops"}
+  - name: only whitespace
+    args: {cmd: "   "}
+    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "no command given"'}
+
+  # Output and return codes
+  - name: stdout and stderr
+    args: {argv: [sh, -c, "echo out; echo err >&2"]}
+  - name: non-zero return code
+    args: {argv: [sh, -c, "echo failing; exit 3"]}
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: killed by a signal
+    args: {argv: [sh, -c, "kill -TERM $$"]}
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: trailing newlines are stripped
+    args: {argv: [printf, "a\\n\\n\\r\\n"]}
+  - name: strip_empty_ends false
+    args: {argv: [printf, "a\\n\\n"], strip_empty_ends: false}
+  - name: strip_empty_ends as a string
+    args: {argv: [printf, "a\\n\\n"], strip_empty_ends: "no"}
+  - name: unicode output
+    args: {argv: [echo, "héllo ✓ ünïcode"]}
+  - name: large output
+    args: {argv: [sh, -c, "head -c 300000 /dev/zero | tr '\\0' a; echo; head -c 100000 /dev/zero | tr '\\0' b >&2"]}
+  - name: background process keeps stdout open
+    args: {argv: [sh, -c, "sleep 3 & echo started"]}
+
+  # stdin
+  - name: stdin
+    args: {cmd: cat, stdin: "hello\nworld"}
+  - name: stdin without added newline
+    args: {cmd: cat, stdin: "no newline", stdin_add_newline: false}
+  - name: empty stdin
+    args: {cmd: echo nothing, stdin: ""}
+
+  # Working directory
+  - name: chdir
+    args: {cmd: pwd, chdir: "{{ cmd_dir }}"}
+  - name: chdir with ~
+    args: {cmd: pwd, chdir: "~"}
+  - name: chdir that does not exist
+    args: {cmd: pwd, chdir: "{{ cmd_dir }}/missing"}
+    builtin_differs: {before: "2.19", why: 'its msg includes the OS error'}
+
+  # creates / removes, including globs
+  - name: creates exists
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/exists.txt"}
+  - name: creates missing
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/missing.txt"}
+  - name: creates glob matches
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/ex*.txt"}
+  - name: creates glob does not match hidden files
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/hidden/*"}
+  - name: creates glob with explicit dot matches hidden files
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/hidden/.*"}
+  - name: creates glob character class
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/[a-f]xists.txt"}
+  - name: creates negated character class
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/[!e]xists.txt"}
+  - name: creates directory glob
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/*/inner.txt"}
+  - name: creates broken symlink
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/broken_link"}
+  - name: creates relative to chdir
+    args: {cmd: echo ran, chdir: "{{ cmd_dir }}", creates: exists.txt}
+  - name: creates with variables
+    args: {cmd: echo ran, creates: "$CMD_TEST_DIR/exists.txt"}
+    environment: {CMD_TEST_DIR: "{{ cmd_dir }}"}
+  - name: removes exists
+    args: {cmd: echo ran, removes: "{{ cmd_dir }}/exists.txt"}
+  - name: removes missing
+    args: {cmd: echo ran, removes: "{{ cmd_dir }}/missing.txt"}
+  - name: creates wins over removes
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/exists.txt", removes: "{{ cmd_dir }}/missing.txt"}
+
+  # Check mode
+  - name: check mode without creates or removes is skipped
+    args: {cmd: echo ran}
+    check_mode: true
+  - name: check mode with creates missing
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/missing.txt"}
+    check_mode: true
+  - name: check mode with creates exists
+    args: {cmd: echo ran, creates: "{{ cmd_dir }}/exists.txt"}
+    check_mode: true
+  - name: check mode with removes missing
+    args: {cmd: echo ran, removes: "{{ cmd_dir }}/missing.txt"}
+    check_mode: true
+
+  # Variable expansion
+  - name: arguments are expanded
+    args: {argv: [echo, "$CMD_TEST_VAR", "${CMD_TEST_VAR}x", "$CMD_TEST_UNSET", "~", "~/sub", "~root", "~nosuchuser_xyz", "$"]}
+    environment: {CMD_TEST_VAR: expanded}
+  - name: expansion turned off
+    args: {argv: [echo, "$CMD_TEST_VAR", "~"], expand_argument_vars: false}
+    environment: {CMD_TEST_VAR: expanded}
+  - name: the command itself is expanded
+    args: {argv: ["$CMD_TEST_ECHO", hi]}
+    environment: {CMD_TEST_ECHO: /bin/echo}
+  - name: environment reaches the command
+    args: {argv: [sh, -c, "echo $CMD_TEST_VAR"]}
+    environment: {CMD_TEST_VAR: from environment}
+
+  # Shell behaviour used by ansible.builtin.shell
+  - name: executable is ignored without the shell
+    args: {cmd: echo hi, executable: /bin/bash}
+  - name: uses shell
+    args: {_raw_params: "echo $((1+2)) | tr 3 4", _uses_shell: true}
+  - name: uses shell with executable
+    args: {_raw_params: "echo $BASH_VERSION | cut -c1", _uses_shell: true, executable: /bin/bash}
+  - name: uses shell with argv
+    args: {argv: [echo, "a b", "$HOME"], _uses_shell: true}
+
+  # Commands that can't run
+  - name: command not found
+    args: {cmd: nonexistent_command_xyz}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+  - name: command not found with a password
+    args: {argv: [nonexistent_command_xyz, --password=secret, --pass, hidden, plain]}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+  - name: file is not executable
+    args: {cmd: "{{ cmd_dir }}/noexec.sh"}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+  - name: directory is not executable
+    args: {cmd: "{{ cmd_dir }}"}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+  - name: not executable on PATH
+    args: {cmd: noexec.sh}
+    environment: {PATH: "{{ cmd_dir }}:/usr/bin:/bin"}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+
+  # Argument validation
+  - name: cmd and argv are mutually exclusive
+    args: {cmd: echo a, argv: [echo, b]}
+    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "only command or argv can be given, not both"'}
+  - name: one of cmd or argv is required
+    args: {chdir: /tmp}
+    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "no command given"'}
+  - name: unsupported option
+    args: {cmd: echo a, bogus: 1}
+    builtin_differs: {before: "2.19", why: 'it has no cmd option, so the supported options listed differ'}
+  - name: invalid boolean
+    args: {cmd: echo a, strip_empty_ends: maybe}
+  - name: argv of the wrong type
+    args: {argv: {not: a list}}

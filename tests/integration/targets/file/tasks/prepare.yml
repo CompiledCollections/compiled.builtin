@@ -1,0 +1,31 @@
+# The same starting tree for every run: files, a directory tree, links,
+# hard links, all with fixed times so runs compare equal.
+- name: Make the starting tree
+  ansible.builtin.shell:
+    cmd: |
+      chmod -R u+rwX "{{ file_dir }}" 2>/dev/null; rm -rf "{{ file_dir }}"
+      mkdir -p "{{ file_dir }}" && cd "{{ file_dir }}" || exit 1
+      printf 'hello\n' > file.txt
+      printf 'other\n' > other.txt
+      printf '\000\001binary' > binary.bin
+      mkdir -p tree/sub/deep empty
+      printf 'a\n' > tree/a.txt
+      printf 'b\n' > tree/sub/b.txt
+      printf 'c\n' > tree/sub/deep/c.txt
+      ln -s ../file.txt tree/link-to-file
+      ln -s sub tree/link-to-sub
+      ln -s nowhere tree/broken
+      ln -s file.txt link.txt
+      ln -s tree dirlink
+      ln -s nowhere broken
+      printf 'hard\n' > hard1 && ln hard1 hard2
+      chmod 0644 file.txt other.txt binary.bin tree/a.txt tree/sub/b.txt tree/sub/deep/c.txt hard1
+      chmod 0755 tree tree/sub tree/sub/deep empty
+      find . -exec touch -h -d @1577836800 {} +
+      {{ case.setup | default('') }}
+    executable: /bin/bash
+  changed_when: false
+
+- name: Module arguments
+  ansible.builtin.set_fact:
+    module_args: "{{ case.args }}"

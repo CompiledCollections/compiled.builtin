@@ -1,0 +1,21 @@
+# Without the executable option, the shell comes from ansible_shell_executable
+# (the play's shell), as for ansible.builtin.shell.
+- name: ansible.builtin.shell with ansible_shell_executable
+  ansible.builtin.shell: echo "${BASH_VERSION:+bash}"
+  vars:
+    ansible_shell_executable: /bin/bash
+  register: builtin
+
+- name: compiled.builtin.shell with ansible_shell_executable
+  compiled.builtin.shell:
+    cmd: echo "${BASH_VERSION:+bash}"
+  vars:
+    ansible_shell_executable: /bin/bash
+  register: compiled
+
+- name: Both ran bash
+  ansible.builtin.assert:
+    that:
+      - builtin.stdout == 'bash'
+      - compiled.stdout == builtin.stdout
+      - compiled.cmd == builtin.cmd

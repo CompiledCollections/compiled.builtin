@@ -1,0 +1,164 @@
+DOCUMENTATION:
+  module: lineinfile
+  short_description: Manage lines in text files
+  description:
+    - Compiled Go replacement for M(ansible.builtin.lineinfile), with the same options and results.
+      It does not need Python on the target.
+    - This module ensures a particular line is in a file, or replace an existing line using a back-referenced regular expression.
+    - This is primarily useful when you want to change a single line in a file only.
+  version_added: 1.0.0
+  options:
+    path:
+      description:
+        - The file to modify.
+      type: path
+      required: true
+      aliases: [dest, destfile, name]
+    regexp:
+      description:
+        - The regular expression to look for in every line of the file.
+        - If the regular expression is not matched, the line will be added to the file in keeping with O(insertbefore) or O(insertafter) settings.
+        - Uses Python regular expression syntax, run by Go's RE2 engine. Unicode classes, C($), C(\Z) and escapes behave as in Python.
+          Lookahead and lookbehind assertions, backreferences inside the pattern, conditional groups and verbose mode are not available
+          and make the task fail.
+      type: str
+      aliases: [regex]
+    search_string:
+      description:
+        - The literal string to look for in every line of the file. This does not have to match the entire line.
+        - Mutually exclusive with O(backrefs) and O(regexp).
+      type: str
+    state:
+      description:
+        - Whether the line should be there or not.
+      type: str
+      choices: [absent, present]
+      default: present
+    line:
+      description:
+        - The line to insert/replace into the file.
+        - Required for O(state=present).
+        - If O(backrefs) is set, may contain backreferences (V(\\1), V(\\g<name>)) that will get expanded with the O(regexp) capture groups.
+      type: str
+      aliases: [value]
+    backrefs:
+      description:
+        - Used with O(state=present).
+        - If set, O(line) can contain backreferences (both positional and named) that will get populated if the O(regexp) matches.
+        - O(insertbefore) and O(insertafter) will be ignored, and if the O(regexp) does not match anywhere in the file,
+          the file will be left unchanged.
+        - Mutually exclusive with O(search_string).
+      type: bool
+      default: false
+    insertafter:
+      description:
+        - Used with O(state=present).
+        - If specified, the line will be inserted after the last match of specified regular expression.
+        - If the first match is required, use O(firstmatch=yes).
+        - A special value is available; V(EOF) for inserting the line at the end of the file.
+        - If specified regular expression has no matches or no value is passed, V(EOF) will be used instead.
+        - May not be used with O(backrefs) or O(insertbefore).
+      type: str
+    insertbefore:
+      description:
+        - Used with O(state=present).
+        - If specified, the line will be inserted before the last match of specified regular expression.
+        - If the first match is required, use O(firstmatch=yes).
+        - A value is available; V(BOF) for inserting the line at the beginning of the file.
+        - If specified regular expression has no matches, the line will be inserted at the end of the file.
+        - May not be used with O(backrefs) or O(insertafter).
+      type: str
+    create:
+      description:
+        - Used with O(state=present).
+        - If specified, the file will be created if it does not already exist.
+      type: bool
+      default: false
+    backup:
+      description:
+        - Create a backup file including the timestamp information so you can get the original file back if you somehow clobbered it incorrectly.
+      type: bool
+      default: false
+    firstmatch:
+      description:
+        - Used with O(insertafter) or O(insertbefore).
+        - If set, O(insertafter) and O(insertbefore) will work with the first line that matches the given regular expression.
+      type: bool
+      default: false
+    encoding:
+      description:
+        - The character set in which the target file is encoded.
+        - Supported are UTF-8 (with or without a BOM), ASCII, Latin-1, Windows-1252, UTF-16 and UTF-32.
+      type: str
+      default: utf-8
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+    - ansible.builtin.action_common_attributes.files
+    - ansible.builtin.files
+    - ansible.builtin.validate
+  attributes:
+    check_mode:
+      support: full
+    diff_mode:
+      support: full
+    platform:
+      platforms: posix
+    safe_file_operations:
+      description: Uses Ansible's mechanism to safely write files, keeping ownership, mode and SELinux context.
+      support: full
+    vault:
+      description: Can automatically decrypt Ansible vaulted files.
+      support: none
+  notes:
+    - SELinux contexts are read and set through extended attributes; default contexts (V(_default)) need C(matchpathcon) on the target.
+    - File attributes need C(lsattr) and C(chattr) on the target, as for M(ansible.builtin.lineinfile).
+  seealso:
+    - module: ansible.builtin.lineinfile
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Ensure SELinux is set to enforcing mode
+    compiled.builtin.lineinfile:
+      path: /etc/selinux/config
+      regexp: '^SELINUX='
+      line: SELINUX=enforcing
+
+  - name: Make sure group wheel is not in the sudoers configuration
+    compiled.builtin.lineinfile:
+      path: /etc/sudoers
+      state: absent
+      regexp: '^%wheel'
+
+  - name: Replace a localhost entry with our own
+    compiled.builtin.lineinfile:
+      path: /etc/hosts
+      regexp: '^127\.0\.0\.1'
+      line: 127.0.0.1 localhost
+      owner: root
+      group: root
+      mode: '0644'
+
+  - name: Ensure the default Apache port is 8080
+    compiled.builtin.lineinfile:
+      path: /etc/httpd/conf/httpd.conf
+      regexp: '^Listen '
+      insertafter: '^#Listen '
+      line: Listen 8080
+
+  - name: Validate the sudoers file before saving
+    compiled.builtin.lineinfile:
+      path: /etc/sudoers
+      state: present
+      regexp: '^%ADMIN ALL='
+      line: '%ADMIN ALL=(ALL) NOPASSWD: ALL'
+      validate: /usr/sbin/visudo -cf %s
+
+  - name: Use backrefs with alternative group syntax to avoid conflicts with variable values
+    compiled.builtin.lineinfile:
+      path: /tmp/config
+      regexp: ^(host=).*
+      line: \g<1>{{ hostname }}
+      backrefs: yes
+
+RETURN: {}

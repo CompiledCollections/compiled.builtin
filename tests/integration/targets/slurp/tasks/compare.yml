@@ -1,0 +1,26 @@
+- name: "{{ case.name }} | ansible.builtin.slurp"
+  ansible.builtin.slurp:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | compiled.builtin.slurp"
+  compiled.builtin.slurp:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | results match"
+  when: case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
+  vars:
+    volatile: [ansible_facts, invocation, exception, module_stderr]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') }}"
+  ansible.builtin.assert:
+    that: want == got
+    fail_msg: "{{ case.name }}: results differ\nansible.builtin: {{ want }}\ncompiled.builtin: {{ got }}"
+    quiet: true

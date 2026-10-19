@@ -1,0 +1,8 @@
+machine example.com login exuser password expass
+machine other.org
+  login ouser
+  password opass
+macdef init
+cd /
+
+default login duser password dpass

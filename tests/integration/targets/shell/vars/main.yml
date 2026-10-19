@@ -1,0 +1,118 @@
+shell_dir: "{{ output_dir }}/shell"
+
+# Each case runs ansible.builtin.shell and compiled.builtin.shell with the
+# same arguments (and check_mode/environment); the results must match, apart
+# from timing values.
+#
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+shell_cases:
+  # Shell features
+  - name: pipe
+    args: {cmd: "printf 'b\\na\\n' | sort"}
+  - name: redirect to a file and read it back
+    args: {cmd: "echo written > out.txt && cat out.txt", chdir: "{{ shell_dir }}"}
+  - name: environment variable
+    args: {cmd: "echo $SHELL_TEST_VAR"}
+    environment: {SHELL_TEST_VAR: from environment}
+  - name: unset variable expands to nothing
+    args: {cmd: "echo [$SHELL_TEST_UNSET]"}
+  - name: glob
+    args: {cmd: "ls *.glob", chdir: "{{ shell_dir }}"}
+  - name: command substitution
+    args: {cmd: "echo $(echo nested) `echo backticks`"}
+  - name: and and or
+    args: {cmd: "false || echo fallback && echo next"}
+  - name: semicolons
+    args: {cmd: "echo one; echo two"}
+  - name: multi-line script with set -e
+    args:
+      cmd: |
+        set -e
+        echo first
+        false
+        echo never
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: heredoc
+    args:
+      cmd: |
+        cat <<'END'
+        line one
+        line two
+        END
+  - name: quoting and special characters
+    args: {cmd: "echo 'single $HOME' \"double\" \\$escaped *not-a-glob"}
+  - name: unicode
+    args: {cmd: "echo 'héllo ✓'"}
+  - name: stderr redirect
+    args: {cmd: "echo to-stderr >&2; echo to-stdout"}
+  - name: merged stderr
+    args: {cmd: "echo err >&2 2>&1"}
+
+  # Output and return codes
+  - name: non-zero exit
+    args: {cmd: "echo failing; exit 3"}
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: killed by a signal
+    args: {cmd: "kill -TERM $$"}
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: command not found
+    args: {cmd: "nonexistent_command_xyz"}
+    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
+  - name: trailing newlines are stripped
+    args: {cmd: "printf 'a\\n\\n'"}
+  - name: strip_empty_ends false
+    args: {cmd: "printf 'a\\n\\n'", strip_empty_ends: false}
+  - name: large output
+    args: {cmd: "head -c 300000 /dev/zero | tr '\\0' a"}
+  - name: background process keeps stdout open
+    args: {cmd: "sleep 3 & echo started"}
+
+  # Options
+  - name: stdin
+    args: {cmd: "cat | tr a-z A-Z", stdin: "shout"}
+  - name: stdin without added newline
+    args: {cmd: "cat", stdin: "no newline", stdin_add_newline: false}
+  - name: chdir
+    args: {cmd: "pwd", chdir: "{{ shell_dir }}"}
+  - name: chdir that does not exist
+    args: {cmd: "pwd", chdir: "{{ shell_dir }}/missing"}
+    builtin_differs: {before: "2.19", why: 'its msg includes the OS error'}
+  - name: creates exists
+    args: {cmd: "echo ran", creates: "{{ shell_dir }}/exists.txt"}
+  - name: creates missing
+    args: {cmd: "echo ran", creates: "{{ shell_dir }}/missing.txt"}
+  - name: removes missing
+    args: {cmd: "echo ran", removes: "{{ shell_dir }}/missing.txt"}
+  - name: executable bash
+    args: {cmd: "arr=(a b c); [[ ${arr[1]} == b ]] && echo bash", executable: /bin/bash}
+  - name: executable that does not exist
+    args: {cmd: "echo hi", executable: /nonexistent/shell}
+    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
+  - name: argv is quoted for the shell
+    args: {argv: [echo, "a b", "$HOME", "it's"]}
+  - name: raw params
+    args: {_raw_params: "echo raw | tr a-z A-Z"}
+
+  # Check mode
+  - name: check mode without creates or removes is skipped
+    args: {cmd: "echo ran"}
+    check_mode: true
+  - name: check mode with creates missing
+    args: {cmd: "echo ran", creates: "{{ shell_dir }}/missing.txt"}
+    check_mode: true
+
+  # Argument validation
+  - name: expand_argument_vars is not a shell option
+    args: {cmd: "echo hi", expand_argument_vars: true}
+  - name: cmd and argv are mutually exclusive
+    args: {cmd: "echo a", argv: [echo, b]}
+    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "only command or argv can be given, not both"'}
+  - name: one of cmd or argv is required
+    args: {chdir: /tmp}
+    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "no command given"'}
+  - name: unsupported option
+    args: {cmd: "echo a", bogus: 1}
+    builtin_differs: {before: "2.19", why: 'it has no cmd option, so the supported options listed differ'}

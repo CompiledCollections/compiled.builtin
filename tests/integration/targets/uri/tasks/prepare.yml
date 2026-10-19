@@ -1,0 +1,9 @@
+- name: Start from an empty dest_dir
+  ansible.builtin.shell: rm -rf "{{ dest_dir }}" && mkdir -p "{{ dest_dir }}"
+
+- name: Existing file in dest_dir
+  ansible.builtin.copy:
+    content: "old content\n"
+    dest: "{{ dest_dir }}/{{ case.dest_file }}"
+    mode: "0644"
+  when: case.dest_file is defined

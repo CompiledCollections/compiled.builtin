@@ -1,0 +1,44 @@
+# Free-form task lines are split like ansible.builtin.command: k=v words that
+# aren't module options (a=b, FOO=bar) stay in the command, with templating,
+# chdir=/creates= options, args: stdin, and the action: form. Each pair must
+# give the same cmd, stdout, rc, changed and msg. These can't go through
+# compare.yml: the point is how the task line itself is parsed.
+- vars:
+    word: templated
+  block:
+    - ansible.builtin.command: echo a=b "two words" {{ word }} FOO=bar
+      register: b1
+    - compiled.builtin.command: echo a=b "two words" {{ word }} FOO=bar
+      register: c1
+
+    - ansible.builtin.command: echo created chdir={{ cmd_dir }} creates=exists.txt
+      register: b2
+    - compiled.builtin.command: echo created chdir={{ cmd_dir }} creates=exists.txt
+      register: c2
+
+    - ansible.builtin.command: cat
+      args:
+        stdin: from args
+      register: b3
+    - compiled.builtin.command: cat
+      args:
+        stdin: from args
+      register: c3
+
+    - action: ansible.builtin.command echo x=1 'quoted words'
+      register: b4
+    - action: compiled.builtin.command echo x=1 'quoted words'
+      register: c4
+
+    - name: Free-form results match
+      ansible.builtin.assert:
+        that:
+          - item.0.cmd == item.1.cmd
+          - item.0.stdout == item.1.stdout
+          - item.0.rc == item.1.rc
+          - item.0.changed == item.1.changed
+          - item.0.msg == item.1.msg
+        fail_msg: "ansible.builtin: {{ item.0 }}\ncompiled.builtin: {{ item.1 }}"
+      loop: "{{ [[b1, c1], [b2, c2], [b3, c3], [b4, c4]] }}"
+      loop_control:
+        label: "{{ item.0.cmd }}"

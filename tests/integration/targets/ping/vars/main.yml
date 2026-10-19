@@ -1,0 +1,20 @@
+# Each case runs ansible.builtin.ping and compiled.builtin.ping with the same
+# arguments; the results must match.
+ping_cases:
+  - name: default
+    args: {}
+  - name: custom data
+    args: {data: hello}
+  - name: empty data
+    args: {data: ""}
+  - name: unicode data
+    args: {data: "héllo ✓"}
+  - name: integer data is converted to a string
+    args: {data: 42}
+  - name: crash raises
+    args: {data: crash}
+  - name: check mode
+    args: {data: checked}
+    check_mode: true
+  - name: unsupported option
+    args: {data: x, bogus: 1}

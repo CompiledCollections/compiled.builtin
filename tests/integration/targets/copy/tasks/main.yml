@@ -1,0 +1,29 @@
+- name: Source trees on the controller
+  ansible.builtin.shell:
+    cmd: |
+      rm -rf "{{ copy_src }}" && mkdir -p "{{ copy_src }}" && cd "{{ copy_src }}" || exit 1
+      printf 'hello\n' > hello.txt
+      printf 'other\n' > other.txt
+      printf '\000\001binary' > binary.bin
+      printf '#!/bin/sh\necho hi\n' > script.sh && chmod 0750 script.sh
+      mkdir -p tree/sub/deep tree/empty
+      printf 'a\n' > tree/a.txt
+      printf 'b\n' > tree/sub/b.txt
+      printf 'c\n' > tree/sub/deep/c.txt
+      ln -s a.txt tree/link-to-a
+      ln -s sub tree/link-to-sub
+      chmod 0644 hello.txt other.txt binary.bin tree/a.txt tree/sub/b.txt tree/sub/deep/c.txt
+      chmod 0755 tree tree/sub tree/sub/deep tree/empty
+    executable: /bin/bash
+  delegate_to: localhost
+  changed_when: false
+
+- name: Compare compiled.builtin.copy with ansible.builtin.copy
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ copy_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Let the test framework remove the directory
+  ansible.builtin.shell: chmod -R u+rwX "{{ copy_dir }}" 2>/dev/null || true

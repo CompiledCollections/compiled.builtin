@@ -1,0 +1,13 @@
+# start, end and delta use the formats of Python's datetime and timedelta,
+# and delta reflects how long the command ran (a 0.2 s sleep).
+- name: Timing values
+  compiled.builtin.command:
+    cmd: sleep 0.2
+  register: timed
+
+- name: Timing values look like the Python module's
+  ansible.builtin.assert:
+    that:
+      - timed.start is match('^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d{6})?$')
+      - timed.end is match('^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(\.\d{6})?$')
+      - timed.delta is match('^0:00:00\.[2-9]\d{5}$')

@@ -1,0 +1,29 @@
+# Features of the builtin with no Go equivalent fail with a message naming
+# them: GSSAPI/Kerberos authentication (use_gssapi, which needs the Python
+# gssapi library) and OpenSSL cipher keywords and operators (HIGH, !aNULL).
+# Only the compiled module runs.
+- name: Unsupported options
+  compiled.builtin.uri:
+    url: "{{ https_url }}/echo"
+    ca_path: "{{ http_server_dir }}/ca.pem"
+    use_gssapi: "{{ item.use_gssapi | default(false) }}"
+    ciphers: "{{ item.ciphers | default(omit) }}"
+  register: unsupported
+  ignore_errors: true
+  loop:
+    - {use_gssapi: true, expect: use_gssapi}
+    - {ciphers: ["HIGH:!aNULL"], expect: OpenSSL keywords}
+    - {ciphers: [DEFAULT], expect: OpenSSL keywords}
+  loop_control:
+    label: "{{ item.expect }}"
+
+- name: Each fails and says why
+  ansible.builtin.assert:
+    that:
+      - item is failed
+      - item.msg is search(item.item.expect)
+      - item.msg is search('compiled.builtin.uri')
+    fail_msg: "{{ item | to_json }}"
+  loop: "{{ unsupported.results }}"
+  loop_control:
+    label: "{{ item.item.expect }}"

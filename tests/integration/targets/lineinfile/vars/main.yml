@@ -1,0 +1,399 @@
+lif_dir: "{{ output_dir }}/lineinfile"
+lif_file: "{{ lif_dir }}/file.txt"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_uid: "{{ lookup('pipe', 'id -u') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+
+# Each case writes `content` (or base64 `content_b64`) to lif_file, runs
+# ansible.builtin.lineinfile and compiled.builtin.lineinfile with `args`
+# (path defaults to lif_file), and compares the results and the files left
+# behind. Diff mode is on unless `diff: false`. `compare: failed` only
+# compares whether the task failed, for errors whose wording comes from
+# Python's or Go's own libraries.
+# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin of ansible-core older than VERSION behaves differently; the
+# compiled module always behaves like the current builtin, so on those
+# versions the case runs but isn't compared.
+lineinfile_cases:
+  # Adding lines
+  - name: add a line at the end
+    content: "one\ntwo\n"
+    args: {line: three}
+  - name: line already present
+    content: "one\ntwo\n"
+    args: {line: one}
+  - name: file without a trailing newline
+    content: "one\ntwo"
+    args: {line: three}
+  - name: empty file
+    content: ""
+    args: {line: first}
+  - name: indented line is a different line
+    content: "  one\n"
+    args: {line: one}
+  - name: unicode line
+    content: "uno\n"
+    args: {line: "dös ✓"}
+  - name: windows line endings are normalized
+    content: "one\r\ntwo\r\n"
+    args: {line: three}
+    builtin_differs: {before: "2.20", why: 'it works on bytes and keeps \r\n'}
+  - name: old mac line endings are normalized
+    content: "one\rtwo\r"
+    args: {line: two}
+    builtin_differs: {before: "2.20", why: 'it works on bytes and keeps \r'}
+  - name: line containing a newline
+    content: "one\n"
+    args: {line: "two\nthree"}
+
+  # regexp
+  - name: regexp replaces the last match
+    content: "key=1\nother\nkey=2\n"
+    args: {regexp: '^key=', line: key=new}
+  - name: regexp with firstmatch replaces the first match
+    content: "key=1\nother\nkey=2\n"
+    args: {regexp: '^key=', line: key=new, firstmatch: true}
+  - name: regexp without a match appends
+    content: "a\n"
+    args: {regexp: '^nomatch', line: added}
+  - name: regexp already matching the line
+    content: "key=new\n"
+    args: {regexp: '^key=', line: key=new}
+  - name: regexp dollar matches before the newline
+    content: "a=1\nb=2\n"
+    args: {regexp: '^b=\d$', line: b=3}
+  - name: regexp \Z does not match before the newline
+    content: "a=1\nb=2\n"
+    args: {regexp: '2\Z', line: b=3}
+  - name: regexp \w is unicode-aware
+    content: "näme=1\n"
+    args: {regexp: '^\w+=', line: x=2}
+    builtin_differs: {before: "2.20", why: 'it matches bytes, where \w is ASCII-only'}
+  - name: regexp \d is unicode-aware
+    content: "٣\nplain\n"
+    args: {regexp: '^\d$', line: digit}
+    builtin_differs: {before: "2.20", why: 'it matches bytes, where \d is ASCII-only'}
+  - name: regexp \s matches a vertical tab
+    content: "a\x0bb\n"
+    args: {regexp: 'a\sb', line: spaced}
+  - name: regexp \S and \W
+    content: "x-y\n"
+    args: {regexp: '^\S\W\S$', line: matched}
+  - name: regexp case-insensitive flag
+    content: "KEY=1\n"
+    args: {regexp: '(?i)^key=', line: key=2}
+  - name: regexp scoped flag
+    content: "KEY=1\n"
+    args: {regexp: '^(?i:key)=', line: key=2}
+  - name: regexp {,n} quantifier
+    content: "aa\n"
+    args: {regexp: '^a{,2}$', line: b}
+  - name: regexp unicode escape
+    content: "café\n"
+    args: {regexp: 'caf\u00e9', line: coffee}
+    builtin_differs: {before: "2.20", why: 'byte patterns have no \u escape'}
+  - name: regexp octal escape
+    content: "a\tb\n"
+    args: {regexp: 'a\011b', line: tabbed}
+  - name: regexp comment group
+    content: "ab\n"
+    args: {regexp: 'a(?#comment)b', line: c}
+  - name: regexp posix-looking class is literal in Python
+    content: "a\n:\n"
+    args: {regexp: '^[[:a]$', line: replaced}
+  - name: empty regexp warns and matches every line
+    content: "a\nb\n"
+    args: {regexp: '', line: z}
+  - name: invalid regexp
+    content: "a\n"
+    args: {regexp: '(', line: z}
+    compare: failed
+
+  # search_string
+  - name: search_string replaces the last match
+    content: "a.b 1\nother\na.b 2\n"
+    args: {search_string: a.b, line: replaced}
+  - name: search_string with firstmatch
+    content: "a.b 1\nother\na.b 2\n"
+    args: {search_string: a.b, line: replaced, firstmatch: true}
+  - name: search_string is literal
+    content: "axb\n"
+    args: {search_string: a.b, line: added}
+  - name: empty search_string warns
+    content: "a\nb\n"
+    args: {search_string: '', line: z}
+
+  # insertafter / insertbefore
+  - name: insertafter the last match
+    content: "[s]\nx=1\n[s]\ny=2\n"
+    args: {insertafter: '^\[s\]', line: new}
+  - name: insertafter the first match
+    content: "[s]\nx=1\n[s]\ny=2\n"
+    args: {insertafter: '^\[s\]', line: new, firstmatch: true}
+  - name: insertafter EOF
+    content: "a\nb\n"
+    args: {insertafter: EOF, line: new}
+  - name: insertafter BOF
+    content: "a\nb\n"
+    args: {insertafter: BOF, line: new}
+  - name: insertafter without a match appends
+    content: "a\nb\n"
+    args: {insertafter: '^zzz', line: new}
+  - name: insertafter the last line
+    content: "a\nb\n"
+    args: {insertafter: '^b', line: new}
+  - name: insertafter the last line without a newline
+    content: "a\nb"
+    args: {insertafter: '^b', line: new}
+  - name: insertafter where the line already is
+    content: "a\nnew\nb\n"
+    args: {insertafter: '^a', line: new}
+  - name: insertafter is ignored when regexp matches
+    content: "a\nkey=1\nb\n"
+    args: {regexp: '^key=', insertafter: '^b', line: key=2}
+  - name: insertafter is used when regexp does not match
+    content: "a\nb\nc\n"
+    args: {regexp: '^key=', insertafter: '^a', line: key=2}
+  - name: insertbefore the last match
+    content: "x\n[s]\ny\n[s]\n"
+    args: {insertbefore: '^\[s\]', line: new}
+  - name: insertbefore the first match
+    content: "x\n[s]\ny\n[s]\n"
+    args: {insertbefore: '^\[s\]', line: new, firstmatch: true}
+  - name: insertbefore BOF
+    content: "a\nb\n"
+    args: {insertbefore: BOF, line: new}
+  - name: insertbefore BOF when the line exists
+    content: "a\nnew\n"
+    args: {insertbefore: BOF, line: new}
+  - name: insertbefore without a match appends
+    content: "a\nb\n"
+    args: {insertbefore: '^zzz', line: new}
+  - name: insertbefore the first line
+    content: "a\nb\n"
+    args: {insertbefore: '^a', line: new}
+  - name: insertbefore where the line already is
+    content: "a\nnew\nb\n"
+    args: {insertbefore: '^b', line: new}
+
+  # backrefs
+  - name: backrefs with positional groups
+    content: "name=old value\n"
+    args: {regexp: '^(\w+)=(.*)$', line: '\1=new (\2)', backrefs: true}
+  - name: backrefs with named groups
+    content: "name=old\n"
+    args: {regexp: '^(?P<key>\w+)=(?P<val>.*)$', line: '\g<val>=\g<key> \g<0>', backrefs: true}
+  - name: backrefs with escapes in the template
+    content: "a b\n"
+    args: {regexp: '^(\w) (\w)$', line: '\1\t\2\\', backrefs: true}
+  - name: backrefs with an unmatched group
+    content: "b\n"
+    args: {regexp: '^(a)?(b)$', line: 'x\1y\2', backrefs: true}
+  - name: backrefs without a match leaves the file alone
+    content: "a\n"
+    args: {regexp: '^zzz(.*)$', line: '\1', backrefs: true}
+  - name: backrefs with a missing group
+    content: "a\n"
+    args: {regexp: '^(a)$', line: '\5', backrefs: true}
+    compare: failed
+
+  # state=absent
+  - name: absent removes the line
+    content: "a\nb\na\n"
+    args: {line: a, state: absent}
+  - name: absent by regexp
+    content: "key=1\nother\nkey=2\n"
+    args: {regexp: '^key', state: absent}
+  - name: absent by search_string
+    content: "a.b\nother\n"
+    args: {search_string: a.b, state: absent}
+  - name: absent with nothing to remove
+    content: "a\n"
+    args: {line: zzz, state: absent}
+  - name: absent on a missing file
+    args: {line: a, state: absent}
+  - name: absent with backup
+    content: "a\nb\n"
+    args: {line: a, state: absent, backup: true}
+
+  # create
+  - name: create a missing file
+    args: {line: first, create: true}
+  - name: missing file without create
+    args: {line: first}
+  - name: create in a missing directory
+    args: {path: "{{ lif_dir }}/new/dir/file.txt", line: first, create: true}
+  - name: create in check mode
+    args: {line: first, create: true}
+    check_mode: true
+
+  # Argument and state errors
+  - name: path is a directory
+    args: {path: "{{ lif_dir }}", line: a}
+  - name: line is required with state=present
+    content: "a\n"
+    args: {regexp: a}
+  - name: backrefs requires regexp
+    content: "a\n"
+    args: {line: a, backrefs: true}
+  - name: absent needs line, regexp or search_string
+    content: "a\n"
+    args: {state: absent}
+  - name: insertbefore and insertafter are mutually exclusive
+    content: "a\n"
+    args: {line: b, insertbefore: a, insertafter: a}
+  - name: regexp and search_string are mutually exclusive
+    content: "a\n"
+    args: {line: b, regexp: a, search_string: a}
+  - name: backrefs and search_string are mutually exclusive
+    content: "a\n"
+    args: {line: b, search_string: a, backrefs: true}
+  - name: invalid state
+    content: "a\n"
+    args: {line: b, state: maybe}
+  - name: unsupported option
+    content: "a\n"
+    args: {line: b, bogus: true}
+    builtin_differs: {before: "2.20", why: 'it has no encoding option, so the supported options listed differ'}
+  - name: path is required
+    args: {line: b}
+    no_path: true
+
+  # Aliases
+  - name: dest alias
+    content: "a\n"
+    args: {dest: "{{ lif_file }}", line: b}
+  - name: name alias
+    content: "a\n"
+    args: {name: "{{ lif_file }}", line: b}
+  - name: destfile alias
+    content: "a\n"
+    args: {destfile: "{{ lif_file }}", line: b}
+  - name: regex and value aliases
+    content: "k=1\n"
+    args: {regex: '^k=', value: k=2}
+  - name: path with variables and ~ is expanded on the target
+    content: "a\n"
+    args: {path: "$LIF_DIR/file.txt", line: b}
+    environment: {LIF_DIR: "{{ lif_dir }}"}
+
+  # Backups
+  - name: backup when changed
+    content: "a\n"
+    args: {line: b, backup: true}
+  - name: no backup when unchanged
+    content: "a\n"
+    args: {line: a, backup: true}
+
+  # Check and diff modes
+  - name: check mode with a change
+    content: "a\n"
+    args: {line: b}
+    check_mode: true
+  - name: check mode without a change
+    content: "a\n"
+    args: {line: a}
+    check_mode: true
+  - name: diff mode off
+    content: "a\n"
+    args: {line: b}
+    diff: false
+
+  # File attributes
+  - name: mode as an octal string
+    content: "a\n"
+    args: {line: b, mode: "0600"}
+  - name: mode as an integer
+    content: "a\n"
+    args: {line: b, mode: 0600}
+  - name: mode without a leading zero
+    content: "a\n"
+    args: {line: b, mode: "640"}
+  - name: symbolic mode
+    content: "a\n"
+    args: {line: b, mode: "u+x,g-r,o="}
+    file_mode: "0644"
+  - name: symbolic mode with X and copies
+    content: "a\n"
+    args: {line: b, mode: "a+X,g=u"}
+    file_mode: "0744"
+  - name: symbolic mode without users uses the umask
+    content: "a\n"
+    args: {line: b, mode: "=rw"}
+  - name: only the mode changes
+    content: "a\n"
+    args: {line: a, mode: "0600"}
+  - name: mode already right
+    content: "a\n"
+    args: {line: a, mode: "0644"}
+  - name: invalid mode
+    content: "a\n"
+    args: {line: a, mode: "abc"}
+  - name: existing permissions are kept on rewrite
+    content: "a\n"
+    args: {line: b}
+    file_mode: "0640"
+  - name: owner by name
+    content: "a\n"
+    args: {line: b, owner: "{{ current_user }}"}
+  - name: owner by id
+    content: "a\n"
+    args: {line: b, owner: "{{ current_uid }}"}
+  - name: unknown owner
+    content: "a\n"
+    args: {line: b, owner: no_such_user_xyz}
+  - name: group
+    content: "a\n"
+    args: {line: a, group: "{{ other_group }}"}
+  - name: unknown group
+    content: "a\n"
+    args: {line: b, group: no_such_group_xyz}
+  - name: unsafe_writes is accepted
+    content: "a\n"
+    args: {line: b, unsafe_writes: true}
+
+  # Encodings
+  - name: latin-1 file
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {line: "thé", encoding: latin-1}
+    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
+  - name: utf-16 file
+    content_b64: "{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"
+    args: {line: three, encoding: utf-16}
+    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
+  - name: utf-8 with a BOM
+    content_b64: "{{ '\ufeffone\n' | b64encode }}"
+    args: {line: two}
+  - name: invalid utf-8
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {line: x}
+    builtin_differs: {before: "2.20", why: 'it works on bytes, so any content is accepted'}
+  - name: unencodable line
+    content: "a\n"
+    args: {line: "é", encoding: ascii}
+    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
+  - name: unknown encoding
+    content: "a\n"
+    args: {line: b, encoding: no-such-codec}
+    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
+
+  # validate
+  - name: validate passes
+    content: "a\n"
+    args: {line: b, validate: "grep -q b %s"}
+  - name: validate fails
+    content: "a\n"
+    args: {line: b, validate: "grep -q zzz %s"}
+  - name: validate without %s
+    content: "a\n"
+    args: {line: b, validate: "true"}
+  - name: validate with an escaped percent
+    content: "a\n"
+    args: {line: b, validate: "sh -c 'test 100%% = 100%% && grep -q b \"$0\"' %s"}
+
+  # Symlinks
+  - name: a symlink's target is updated
+    content: "a\n"
+    args: {path: "{{ lif_dir }}/link.txt", line: b}
+    symlink: true
