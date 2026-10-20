@@ -1,0 +1,11 @@
+# Starts the container `container` from `image`, and adds it as a host
+# without Python: modules that need it fail.
+- name: "Start {{ container }}"
+  ansible.builtin.command: podman run -d --rm --name {{ container }} {{ image }} sleep 3600
+  changed_when: true
+
+- name: "Add {{ container }} as a host"
+  ansible.builtin.add_host:
+    name: "{{ container }}"
+    ansible_connection: cgm_podman
+    ansible_python_interpreter: /nonexistent/python
