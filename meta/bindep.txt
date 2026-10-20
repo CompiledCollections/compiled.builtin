@@ -1,0 +1,12 @@
+# System packages for an execution environment (ansible-builder reads this
+# through meta/execution-environment.yml).
+#
+# Go is only needed for targets other than linux_amd64: the action plugins
+# compile those modules on the controller with go build (go.mod needs 1.22 or
+# later). linux_amd64 binaries ship with the collection and need nothing.
+golang [platform:rpm]
+golang-go [platform:dpkg]
+# upx packs the binaries it compiles; it's optional, and on RHEL and UBI it
+# comes from EPEL, so it isn't required here:
+# upx [platform:rpm]
+# upx-ucl [platform:dpkg]

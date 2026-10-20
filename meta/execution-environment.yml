@@ -1,0 +1,5 @@
+---
+# Read by ansible-builder when an execution environment includes this collection.
+version: 1
+dependencies:
+  system: meta/bindep.txt
