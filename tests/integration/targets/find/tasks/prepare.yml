@@ -1,0 +1,35 @@
+# The same tree for every case, with fixed times (the files made by the
+# case's shell `setup` keep the current time).
+- name: Make the tree
+  ansible.builtin.shell:
+    cmd: |
+      chmod -R u+rwX "{{ find_dir }}" 2>/dev/null; rm -rf "{{ find_dir }}"
+      mkdir -p "{{ tree }}" && cd "{{ tree }}" || exit 1
+      printf 'hello\nworld\n' > a.txt
+      printf 'error: x\nhello\n' > b.log && chmod 0600 b.log
+      printf 'upper\n' > c.TXT
+      printf 'hidden\n' > .hidden.txt
+      head -c 2048 /dev/zero > big.bin
+      : > empty.txt
+      printf '#!/bin/sh\n' > exec.sh && chmod 0755 exec.sh
+      printf 'caf\351\n' > latin.txt
+      printf 'ok\n\377\n' > bad-utf8.txt
+      printf 'one\r\ntwo\r\n' > crlf.txt
+      printf 'secret\n' > unreadable.txt
+      printf 'suid\n' > suid.sh && chmod 4755 suid.sh
+      mkfifo fifo
+      mkdir -p sub/deep sub/.hiddendir unreadable-dir unsearchable-dir
+      printf 'nested hello\n' > sub/d.txt
+      printf 'deep\n' > sub/deep/e.txt
+      printf 'hid\n' > sub/.hiddendir/f.txt
+      printf 'x\n' > unreadable-dir/x.txt
+      printf 'y\n' > unsearchable-dir/y.txt
+      ln -s a.txt link-to-a
+      ln -s sub link-to-sub
+      ln -s missing broken
+      find . -exec touch -h -d @1577836800 {} +
+      chmod 0000 unreadable.txt unreadable-dir
+      chmod 0644 unsearchable-dir
+      {{ case.setup | default('') }}
+    executable: /bin/bash
+  changed_when: false

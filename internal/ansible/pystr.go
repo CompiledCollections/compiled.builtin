@@ -25,3 +25,34 @@ func SplitLines(s string) []string {
 	}
 	return lines
 }
+
+// PyNormpath is os.path.normpath: it collapses repeated slashes, "." and
+// "dir/..", keeping a leading "//" as POSIX allows.
+func PyNormpath(path string) string {
+	if path == "" {
+		return "."
+	}
+	initial := 0
+	if strings.HasPrefix(path, "/") {
+		initial = 1
+		if strings.HasPrefix(path, "//") && !strings.HasPrefix(path, "///") {
+			initial = 2
+		}
+	}
+	var comps []string
+	for _, comp := range strings.Split(path, "/") {
+		if comp == "" || comp == "." {
+			continue
+		}
+		if comp != ".." || initial == 0 && len(comps) == 0 || len(comps) > 0 && comps[len(comps)-1] == ".." {
+			comps = append(comps, comp)
+		} else if len(comps) > 0 {
+			comps = comps[:len(comps)-1]
+		}
+	}
+	out := strings.Repeat("/", initial) + strings.Join(comps, "/")
+	if out == "" {
+		return "."
+	}
+	return out
+}

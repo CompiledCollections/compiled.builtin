@@ -2,8 +2,10 @@ package ansible
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -81,6 +83,24 @@ type golden struct {
 		Multiline bool   `json:"multiline"`
 		Err       string `json:"err"`
 	} `json:"multiline"`
+	Subn []struct {
+		Re  string `json:"re"`
+		T   string `json:"t"`
+		S   string `json:"s"`
+		Out string `json:"out"`
+		N   int    `json:"n"`
+		Err string `json:"err"`
+	} `json:"subn"`
+	Templates []struct {
+		T        string `json:"t"`
+		Out      string `json:"out"`
+		Err      string `json:"err"`
+		IndexErr string `json:"index_err"`
+	} `json:"templates"`
+	Normpath []struct {
+		In  string `json:"in"`
+		Out string `json:"out"`
+	} `json:"normpath"`
 }
 
 func loadGolden(t *testing.T) golden {
@@ -299,6 +319,59 @@ func TestPythonGlobalFlags(t *testing.T) {
 		}
 		if got := strings.ContainsRune(PythonGlobalFlags(c.Re), 'm'); got != c.Multiline {
 			t.Errorf("PythonGlobalFlags(%q) multiline = %v, Python %v", c.Re, got, c.Multiline)
+		}
+	}
+}
+
+func TestSubnPython(t *testing.T) {
+	for _, c := range loadGolden(t).Subn {
+		re, err := CompilePythonRegexp("(?m)" + c.Re)
+		if err != nil {
+			t.Errorf("CompilePythonRegexp(%q): %v", c.Re, err)
+			continue
+		}
+		tmpl, err := ParseTemplate(re.Regexp, c.T)
+		if err != nil {
+			t.Errorf("ParseTemplate(%q): %v", c.T, err)
+			continue
+		}
+		if out, n := re.SubnPython(tmpl, c.S); out != c.Out || n != c.N {
+			t.Errorf("subn(%q, %q, %q) = %q, %d; Python %q, %d", c.Re, c.T, c.S, out, n, c.Out, c.N)
+		}
+	}
+}
+
+func TestParseTemplate(t *testing.T) {
+	re := regexp.MustCompile(`(?P<k>a)(b)`)
+	for _, c := range loadGolden(t).Templates {
+		tmpl, err := ParseTemplate(re, c.T)
+		var tErr *TemplateError
+		var iErr *UnknownGroupError
+		switch {
+		case c.Err != "":
+			if !errors.As(err, &tErr) || err.Error() != c.Err {
+				t.Errorf("ParseTemplate(%q) error = %v, Python re.error %q", c.T, err, c.Err)
+			}
+		case c.IndexErr != "":
+			if !errors.As(err, &iErr) || err.Error() != c.IndexErr {
+				t.Errorf("ParseTemplate(%q) error = %v, Python IndexError %q", c.T, err, c.IndexErr)
+			}
+		case err != nil:
+			t.Errorf("ParseTemplate(%q): %v, Python %q", c.T, err, c.Out)
+		default:
+			s := "xab"
+			loc := re.FindStringSubmatchIndex(s)
+			if got := "x" + tmpl.Expand(s, loc); got != c.Out {
+				t.Errorf("ParseTemplate(%q) expands to %q, Python %q", c.T, got, c.Out)
+			}
+		}
+	}
+}
+
+func TestPyNormpath(t *testing.T) {
+	for _, c := range loadGolden(t).Normpath {
+		if got := PyNormpath(c.In); got != c.Out {
+			t.Errorf("PyNormpath(%q) = %q, Python %q", c.In, got, c.Out)
 		}
 	}
 }

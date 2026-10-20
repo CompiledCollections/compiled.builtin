@@ -1018,5 +1018,317 @@
    "re": "(?i:a)(?m)",
    "err": "global flags not at the start of the expression at position 6"
   }
+ ],
+ "subn": [
+  {
+   "re": "\\s*$",
+   "t": "-",
+   "s": "a  \nb  ",
+   "out": "a--\nb--",
+   "n": 4
+  },
+  {
+   "re": "x*",
+   "t": "-",
+   "s": "abxd",
+   "out": "-a-b--d-",
+   "n": 5
+  },
+  {
+   "re": "^",
+   "t": "# ",
+   "s": "a\nb\n",
+   "out": "# a\n# b\n# ",
+   "n": 3
+  },
+  {
+   "re": "$",
+   "t": ";",
+   "s": "a\nb\n",
+   "out": "a;\nb;\n;",
+   "n": 3
+  },
+  {
+   "re": "\\s*$",
+   "t": "-",
+   "s": "a  \nb\n",
+   "out": "a--\nb--",
+   "n": 4
+  },
+  {
+   "re": "b*",
+   "t": "-",
+   "s": "abb",
+   "out": "-a--",
+   "n": 3
+  },
+  {
+   "re": "",
+   "t": "-",
+   "s": "ab",
+   "out": "-a-b-",
+   "n": 3
+  },
+  {
+   "re": "(a)(b)?",
+   "t": "[\\1|\\2]",
+   "s": "aab",
+   "out": "[a|][a|b]",
+   "n": 2
+  },
+  {
+   "re": "(?P<k>\\w+)=(?P<v>\\w*)",
+   "t": "\\g<v>=\\g<k>",
+   "s": "a=1\nb=\n",
+   "out": "1=a\n=b\n",
+   "n": 2
+  },
+  {
+   "re": "é*",
+   "t": "-",
+   "s": "éaé",
+   "out": "--a--",
+   "n": 4
+  },
+  {
+   "re": "\\b",
+   "t": "|",
+   "s": "ab cd",
+   "out": "|ab| |cd|",
+   "n": 4
+  },
+  {
+   "re": "a|",
+   "t": "-",
+   "s": "bab",
+   "out": "-b--b-",
+   "n": 4
+  },
+  {
+   "re": "(?i)A",
+   "t": "x",
+   "s": "aA",
+   "out": "xx",
+   "n": 2
+  },
+  {
+   "re": "\\d+",
+   "t": "<\\g<0>>",
+   "s": "a1b22",
+   "out": "a<1>b<22>",
+   "n": 2
+  },
+  {
+   "re": "x",
+   "t": "y",
+   "s": "no match",
+   "out": "no match",
+   "n": 0
+  },
+  {
+   "re": "(x)?",
+   "t": "[\\1]",
+   "s": "ax",
+   "out": "[]a[x][]",
+   "n": 3
+  },
+  {
+   "re": "\\n",
+   "t": " ",
+   "s": "a\r\nb\n",
+   "out": "a\r b ",
+   "n": 2
+  },
+  {
+   "re": "^\\s*$",
+   "t": "",
+   "s": "a\n\n  \nb",
+   "out": "a\n\nb",
+   "n": 1
+  }
+ ],
+ "normpath": [
+  {
+   "in": "",
+   "out": "."
+  },
+  {
+   "in": ".",
+   "out": "."
+  },
+  {
+   "in": "/",
+   "out": "/"
+  },
+  {
+   "in": "//",
+   "out": "//"
+  },
+  {
+   "in": "///",
+   "out": "/"
+  },
+  {
+   "in": "a//b",
+   "out": "a/b"
+  },
+  {
+   "in": "a/./b",
+   "out": "a/b"
+  },
+  {
+   "in": "a/../b",
+   "out": "b"
+  },
+  {
+   "in": "../a",
+   "out": "../a"
+  },
+  {
+   "in": "/../a",
+   "out": "/a"
+  },
+  {
+   "in": "a/b/../../..",
+   "out": ".."
+  },
+  {
+   "in": "//a/./b/",
+   "out": "//a/b"
+  },
+  {
+   "in": "a/",
+   "out": "a"
+  },
+  {
+   "in": "./",
+   "out": "."
+  },
+  {
+   "in": "a/b/..",
+   "out": "a"
+  },
+  {
+   "in": "/a/b/../../../c",
+   "out": "/c"
+  }
+ ],
+ "templates": [
+  {
+   "t": "\\q",
+   "err": "bad escape \\q at position 0"
+  },
+  {
+   "t": "\\g",
+   "err": "missing < at position 2"
+  },
+  {
+   "t": "\\g<",
+   "err": "missing group name at position 3"
+  },
+  {
+   "t": "\\g<>",
+   "err": "missing group name at position 3"
+  },
+  {
+   "t": "\\g<a",
+   "err": "missing >, unterminated name at position 3"
+  },
+  {
+   "t": "\\g<1a>",
+   "err": "bad character in group name '1a' at position 3"
+  },
+  {
+   "t": "\\g<-1>",
+   "err": "bad character in group name '-1' at position 3"
+  },
+  {
+   "t": "\\5",
+   "err": "invalid group reference 5 at position 1"
+  },
+  {
+   "t": "\\g<5>",
+   "err": "invalid group reference 5 at position 3"
+  },
+  {
+   "t": "\\g<nope>",
+   "index_err": "unknown group name 'nope'"
+  },
+  {
+   "t": "\\",
+   "err": "bad escape (end of pattern) at position 0"
+  },
+  {
+   "t": "ab\\",
+   "err": "bad escape (end of pattern) at position 2"
+  },
+  {
+   "t": "\\8",
+   "err": "invalid group reference 8 at position 1"
+  },
+  {
+   "t": "\\08",
+   "out": "x\u00008"
+  },
+  {
+   "t": "\\400",
+   "err": "octal escape value \\400 outside of range 0-0o377 at position 0"
+  },
+  {
+   "t": "\\g<k>\\2",
+   "out": "xab"
+  },
+  {
+   "t": "\\g< 1>",
+   "err": "bad character in group name ' 1' at position 3"
+  },
+  {
+   "t": "\\g<٣>",
+   "err": "bad character in group name '٣' at position 3"
+  },
+  {
+   "t": "\\x41",
+   "err": "bad escape \\x at position 0"
+  },
+  {
+   "t": "\\N{DIGIT ONE}",
+   "err": "bad escape \\N at position 0"
+  },
+  {
+   "t": "\\-",
+   "out": "x\\-"
+  },
+  {
+   "t": "\\é",
+   "out": "x\\é"
+  },
+  {
+   "t": "\\g<007>",
+   "err": "invalid group reference 7 at position 3"
+  },
+  {
+   "t": "\\g<99999999999999999999>",
+   "err": "invalid group reference 99999999999999999999 at position 3"
+  },
+  {
+   "t": "\\177",
+   "out": "x"
+  },
+  {
+   "t": "\\1\\0",
+   "out": "xa\u0000"
+  },
+  {
+   "t": "\\g<0>",
+   "out": "xab"
+  },
+  {
+   "t": "\\12",
+   "err": "invalid group reference 12 at position 1"
+  },
+  {
+   "t": "x\\ty",
+   "out": "xx\ty"
+  }
  ]
 }
