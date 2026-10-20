@@ -9,16 +9,24 @@ each layer needs.
 - [Unit tests](#unit-tests)
 - [Sanity tests](#sanity-tests)
 - [Integration tests](#integration-tests)
+  - [apk](#apk)
   - [blockinfile](#blockinfile)
   - [command](#command)
   - [copy](#copy)
+  - [fetch](#fetch)
   - [file](#file)
+  - [find](#find)
+  - [get_url](#get_url)
   - [lineinfile](#lineinfile)
+  - [microdnf](#microdnf)
   - [ping](#ping)
+  - [replace](#replace)
   - [shell](#shell)
   - [slurp](#slurp)
   - [stat](#stat)
+  - [template](#template)
   - [uri](#uri)
+  - [wait_for_connection](#wait_for_connection)
 
 ## Unit tests
 
@@ -27,14 +35,14 @@ rely on. Most compare against results recorded from CPython, and for uri from
 ansible-core's own uri code, in `testdata/python.json` files (each made by the
 `generate.py` next to it; re-record them with `python3 tests/build.py golden`).
 
-- `internal/ansible/compat_test.go`: `TestShlexSplit`, `TestShlexQuote`, `TestExpandVars`, `TestPyTime`, `TestCompilePython`, `TestCompilePythonUnsupported`, `TestExpandPython`, `TestFnmatch`, `TestSurrogateEscaped`, `TestStrptime`, `TestPyFloat`, `TestPercentFormat`, `TestSplitLines`, `TestPythonGlobalFlags`
+- `internal/ansible/compat_test.go`: `TestShlexSplit`, `TestShlexQuote`, `TestExpandVars`, `TestPyTime`, `TestCompilePython`, `TestCompilePythonUnsupported`, `TestExpandPython`, `TestFnmatch`, `TestSurrogateEscaped`, `TestStrptime`, `TestPyFloat`, `TestPercentFormat`, `TestSplitLines`, `TestPythonGlobalFlags`, `TestSubnPython`, `TestParseTemplate`, `TestPyNormpath`
 - `internal/files/fileattr_test.go`: `TestSymbolicModeToOctal`, `TestParsePythonOctal`
 - `internal/files/walk_test.go`: `TestPyPath`
 - `modules_src/uri/uri_test.go`: `TestPyJSONDumps`, `TestFormURLEncoded`, `TestPrepareMultipart`, `TestMaskURL`, `TestParseContentType`, `TestResponseFilename`, `TestURLJoin`, `TestRedirectQuote`, `TestNetrc`, `TestBypassProxy`
 
 Results recorded from CPython (and, for uri, ansible-core), by kind:
 
-- `internal/ansible/testdata/python.json`: shlex (19), quote (8), expandvars (17), expanduser (7), timedelta (9), datetime (3), regex (39), expand (12), fnmatch (19), strptime (16), pyfloat (11), percent (7), splitlines (11), multiline (8)
+- `internal/ansible/testdata/python.json`: shlex (19), quote (8), expandvars (17), expanduser (7), timedelta (9), datetime (3), regex (39), expand (12), fnmatch (19), strptime (16), pyfloat (11), percent (7), splitlines (11), multiline (8), subn (18), normpath (16), templates (29)
 - `modules_src/uri/testdata/python.json`: json (6), form (8), multipart (8), mask_url (6), content_type (8), disposition (6), urljoin (7), redirect_quote (4), netrc (3)
 
 ## Sanity tests
@@ -56,13 +64,18 @@ behind must also be identical: content, mode, owner, group, link count,
 times, symlinks and backups (times the run sets to now, and access times of
 symlinks, which move whenever they're read, aren't compared). Cases marked
 *fails only* just check that both fail, because the error text comes from
-Python's or Go's own libraries. Cases marked *not compared before
-ansible-core X* (or *Python X* on the target) still run there, but older
-builtins, or the urllib and ssl of older Pythons they rely on, behave
-differently; the compiled modules always behave like the current builtin.
+Python's or Go's own libraries. Cases marked *not compared before Python
+X* (on the target) still run there, but the builtin, or the urllib and ssl
+it relies on, behaves differently on older Pythons; the compiled modules
+always behave like the builtin on current Python. Only the current
+ansible-core (2.21) is tested.
 
-To add a case, add an entry to the target's `vars/main.yml` and run
-`python3 tests/build.py testdocs`.
+apk and microdnf have no builtin to compare with: their targets run the
+module in containers of the distributions it is for (with podman, through
+the test-only connection in `setup_podman`) and check what it did.
+
+To add a case, add an entry to the target's `vars/main.yml` (or a step to
+`tasks/cases.yml`) and run `python3 tests/build.py testdocs`.
 
 ### blockinfile
 
@@ -80,8 +93,8 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - block containing carriage returns: file `"one\n"`, args `{block: "a\r\nb\rc"}`
 - windows line endings are kept: file `"one\r\ntwo\r\n"`, args `{block: a}`
 - windows line endings around a block: file `"one\r\n# BEGIN ANSIBLE MANAGED BLOCK\r\nold\r\n# END ANSIBLE MANAGED BLOCK\r\n"`, args `{block: new}`
-- vertical tab and form feed split lines: file `"a\x0bb\x0cc\n"`, args `{block: x, insertafter: '^a'}`, *not compared before ansible-core 2.20: it splits bytes, only at \n and \r*
-- unicode line separator splits lines: file `"a b\n"`, args `{block: x, insertbefore: '^b'}`, *not compared before ansible-core 2.20: it splits bytes, only at \n and \r*
+- vertical tab and form feed split lines: file `"a\x0bb\x0cc\n"`, args `{block: x, insertafter: '^a'}`
+- unicode line separator splits lines: file `"a b\n"`, args `{block: x, insertbefore: '^b'}`
 
 #### Markers
 
@@ -118,7 +131,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - insertbefore the first line: file `"a\nb\n"`, args `{block: x, insertbefore: '^a'}`
 - insertafter ignored when the block exists: file `"a\n{{ managed }}b\n"`, args `{block: new, insertafter: '^b'}`
 - insertafter regexp dollar matches before the newline: file `"a=1\nb=2\n"`, args `{block: x, insertafter: '^a=\d$'}`
-- insertafter regexp is unicode-aware: file `"näme=1\nother\n"`, args `{block: x, insertafter: '^\w+=1'}`, *not compared before ansible-core 2.20: it matches bytes, where \w is ASCII-only*
+- insertafter regexp is unicode-aware: file `"näme=1\nother\n"`, args `{block: x, insertafter: '^\w+=1'}`
 - insertafter case-insensitive: file `"a\nKEY\nb\n"`, args `{block: x, insertafter: '(?i)^key'}`
 - insertafter with the multiline flag: file `"LISTENER =\n  (SID_LIST =\n    (x)\n  )\n"`, args `{block: x, insertafter: '(?m)LISTENER =\n.*\(SID_LIST ='}`
 - insertbefore with the multiline flag: file `"a\nstart\nend\nb\n"`, args `{block: x, insertbefore: '(?m)^start\nend$'}`
@@ -170,7 +183,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - path is a directory: args `{path: "{{ bif_dir }}", block: a}`
 - invalid state: file `"a\n"`, args `{block: b, state: maybe}`
-- unsupported option: file `"a\n"`, args `{block: b, bogus: true}`, *not compared before ansible-core 2.20: it has no encoding option, so the supported options listed differ*
+- unsupported option: file `"a\n"`, args `{block: b, bogus: true}`
 - path is required: args `{block: b}`, no path given
 
 #### Aliases
@@ -212,13 +225,13 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### Encodings
 
-- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: "thé", encoding: latin-1}`, *not compared before ansible-core 2.20: it has no encoding option*
-- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{block: three, encoding: utf-16}`, *not compared before ansible-core 2.20: it has no encoding option*
+- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: "thé", encoding: latin-1}`
+- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{block: three, encoding: utf-16}`
 - utf-8 with a BOM: file bytes `"{{ '﻿one\n' | b64encode }}"`, args `{block: two}`
-- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: x}`, *not compared before ansible-core 2.20: it works on bytes, so any content is accepted*
-- unencodable block: file `"a\n"`, args `{block: "é", encoding: ascii}`, *not compared before ansible-core 2.20: it has no encoding option*
-- unknown encoding: file `"a\n"`, args `{block: b, encoding: no-such-codec}`, *not compared before ansible-core 2.20: it has no encoding option*
-- unknown encoding creating a file: args `{block: b, encoding: no-such-codec, create: true}`, *not compared before ansible-core 2.20: it has no encoding option*
+- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: x}`
+- unencodable block: file `"a\n"`, args `{block: "é", encoding: ascii}`
+- unknown encoding: file `"a\n"`, args `{block: b, encoding: no-such-codec}`
+- unknown encoding creating a file: args `{block: b, encoding: no-such-codec, create: true}`
 
 #### validate
 
@@ -248,13 +261,13 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - argv elements are converted to strings: args `{argv: [echo, 1, true, 2.5]}`
 - raw params: args `{_raw_params: echo raw}`
 - unclosed quote: args `{cmd: "echo 'oops"}`
-- only whitespace: args `{cmd: "   "}`, *not compared before ansible-core 2.19: it fails with rc 256 and "no command given"*
+- only whitespace: args `{cmd: "   "}`
 
 #### Output and return codes
 
 - stdout and stderr: args `{argv: [sh, -c, "echo out; echo err >&2"]}`
-- non-zero return code: args `{argv: [sh, -c, "echo failing; exit 3"]}`, *not compared before ansible-core 2.21: its msg is "non-zero return code"*
-- killed by a signal: args `{argv: [sh, -c, "kill -TERM $$"]}`, *not compared before ansible-core 2.21: its msg is "non-zero return code"*
+- non-zero return code: args `{argv: [sh, -c, "echo failing; exit 3"]}`
+- killed by a signal: args `{argv: [sh, -c, "kill -TERM $$"]}`
 - trailing newlines are stripped: args `{argv: [printf, "a\\n\\n\\r\\n"]}`
 - strip_empty_ends false: args `{argv: [printf, "a\\n\\n"], strip_empty_ends: false}`
 - strip_empty_ends as a string: args `{argv: [printf, "a\\n\\n"], strip_empty_ends: "no"}`
@@ -272,7 +285,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - chdir: args `{cmd: pwd, chdir: "{{ cmd_dir }}"}`
 - chdir with ~: args `{cmd: pwd, chdir: "~"}`
-- chdir that does not exist: args `{cmd: pwd, chdir: "{{ cmd_dir }}/missing"}`, *not compared before ansible-core 2.19: its msg includes the OS error*
+- chdir that does not exist: args `{cmd: pwd, chdir: "{{ cmd_dir }}/missing"}`
 
 #### creates / removes, including globs
 
@@ -314,17 +327,17 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### Commands that can't run
 
-- command not found: args `{cmd: nonexistent_command_xyz}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
-- command not found with a password: args `{argv: [nonexistent_command_xyz, --password=secret, --pass, hidden, plain]}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
-- file is not executable: args `{cmd: "{{ cmd_dir }}/noexec.sh"}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
-- directory is not executable: args `{cmd: "{{ cmd_dir }}"}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
-- not executable on PATH: args `{cmd: noexec.sh}`, environment `{PATH: "{{ cmd_dir }}:/usr/bin:/bin"}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
+- command not found: args `{cmd: nonexistent_command_xyz}`
+- command not found with a password: args `{argv: [nonexistent_command_xyz, --password=secret, --pass, hidden, plain]}`
+- file is not executable: args `{cmd: "{{ cmd_dir }}/noexec.sh"}`
+- directory is not executable: args `{cmd: "{{ cmd_dir }}"}`
+- not executable on PATH: args `{cmd: noexec.sh}`, environment `{PATH: "{{ cmd_dir }}:/usr/bin:/bin"}`
 
 #### Argument validation
 
-- cmd and argv are mutually exclusive: args `{cmd: echo a, argv: [echo, b]}`, *not compared before ansible-core 2.19: it fails with rc 256 and "only command or argv can be given, not both"*
-- one of cmd or argv is required: args `{chdir: /tmp}`, *not compared before ansible-core 2.19: it fails with rc 256 and "no command given"*
-- unsupported option: args `{cmd: echo a, bogus: 1}`, *not compared before ansible-core 2.19: it has no cmd option, so the supported options listed differ*
+- cmd and argv are mutually exclusive: args `{cmd: echo a, argv: [echo, b]}`
+- one of cmd or argv is required: args `{chdir: /tmp}`
+- unsupported option: args `{cmd: echo a, bogus: 1}`
 - invalid boolean: args `{cmd: echo a, strip_empty_ends: maybe}`
 - argv of the wrong type: args `{argv: {not: a list}}`
 
@@ -402,26 +415,26 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - remote file to a new file: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true}`
 - remote file unchanged: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/same.txt", remote_src: true}`
-- remote file replacing a file: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}`, *not compared before ansible-core 2.17: an older builtin keeps the replaced file's mode instead of taking the source's*
+- remote file replacing a file: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}`
 - remote file into a directory: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/dir", remote_src: true}`
 - remote file into a new directory (trailing slash): args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/newdir/", remote_src: true}`
 - remote file with mode preserve: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true, mode: preserve}`
 - remote file with mode: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, mode: "0600"}`
-- remote file with backup: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, backup: true}`, *not compared before ansible-core 2.17: an older builtin keeps the replaced file's mode instead of taking the source's*
+- remote file with backup: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, backup: true}`
 - remote file in check mode: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}`, check mode
 - remote file not forced: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, force: false}`
-- remote file over a symlink: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/link.txt", remote_src: true}`, *not compared before ansible-core 2.17: an older builtin keeps the replaced file's mode instead of taking the source's*
+- remote file over a symlink: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/link.txt", remote_src: true}`
 - remote file with a failing validate: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, validate: "false %s"}`
 - remote missing src: args `{src: "{{ rsrc }}/missing.txt", dest: "{{ dest }}/new.txt", remote_src: true}`
 - remote unreadable src: args `{src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/new.txt", remote_src: true}`, setup `chmod 0 rsrc/hello.txt`, *as root, only checks that both fail or both succeed*
 - remote src that isn't a file or directory: args `{src: /dev/null, dest: "{{ dest }}/new.txt", remote_src: true}`
 - remote directory without a trailing slash: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/dir", remote_src: true}`
 - remote directory with a trailing slash: args `{src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}`
-- remote directory to a new path: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true}`, *not compared before ansible-core 2.19: an older builtin doesn't keep times or symlinks when copying a directory on the target*
+- remote directory to a new path: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true}`
 - remote directory to a new nested path: args `{src: "{{ rsrc }}/tree/", dest: "{{ dest }}/newdir/a", remote_src: true}`
-- remote directory with directory_mode: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, directory_mode: "0700"}`, *not compared before ansible-core 2.21: an older builtin doesn't apply directory_mode to the destination directory itself*
-- remote directory, links followed: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: true}`, *not compared before ansible-core 2.19: an older builtin doesn't keep times or symlinks when copying a directory on the target*
-- remote directory, links not followed: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: false}`, *not compared before ansible-core 2.19: an older builtin doesn't keep times or symlinks when copying a directory on the target*
+- remote directory with directory_mode: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, directory_mode: "0700"}`
+- remote directory, links followed: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: true}`
+- remote directory, links not followed: args `{src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: false}`
 - remote directory into a partial copy: args `{src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}`, setup `|`
 - remote directory into a partial copy, links not followed: args `{src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true, local_follow: false}`, setup `mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/sub/b.txt`
 - remote directory into a partial copy, links followed: args `{src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true, local_follow: true}`, setup `mkdir -p dest/dir/sub && printf 'changed\n' > dest/dir/sub/b.txt`
@@ -440,6 +453,40 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - invalid boolean: args `{content: "x", dest: "{{ dest }}/new.txt", backup: maybe}`
 - invalid mode: args `{content: "x", dest: "{{ dest }}/new.txt", mode: "abc"}`
 
+### fetch
+
+23 side-by-side cases in `tests/integration/targets/fetch/vars/main.yml`.
+
+#### Cases
+
+- fetch into a tree per host: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}"}`
+- fetch flat to a file: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}`
+- fetch flat into a directory: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}/", flat: true}`
+- fetch flat into a missing directory: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}/new/", flat: true}`
+- fetch unchanged: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}`, setup `printf 'hello\n' > "{{ dest }}/copy.txt"`
+- fetch replacing a different file: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}`, setup `printf 'old\n' > "{{ dest }}/copy.txt"`
+- fetch a binary file: args `{src: "{{ src }}/binary.bin", dest: "{{ dest }}", flat: false}`
+- fetch an empty file: args `{src: "{{ src }}/empty.txt", dest: "{{ dest }}/empty.txt", flat: true}`
+- fetch a unicode file name: args `{src: "{{ src }}/ünï ✓.txt", dest: "{{ dest }}"}`
+- fetch through a link: args `{src: "{{ src }}/link.txt", dest: "{{ dest }}/copy.txt", flat: true}`
+- fetch a broken link: args `{src: "{{ src }}/broken.txt", dest: "{{ dest }}"}`
+- fetch a missing file: args `{src: "{{ src }}/missing.txt", dest: "{{ dest }}"}`
+- fetch a missing file without fail_on_missing: args `{src: "{{ src }}/missing.txt", dest: "{{ dest }}", fail_on_missing: false}`
+- fetch a directory: args `{src: "{{ src }}/dir", dest: "{{ dest }}"}`
+- fetch a directory without fail_on_missing: args `{src: "{{ src }}/dir", dest: "{{ dest }}", fail_on_missing: false}`
+- fetch an unreadable file: args `{src: "{{ src }}/unreadable.txt", dest: "{{ dest }}"}`
+- fetch an unreadable file without fail_on_missing: args `{src: "{{ src }}/unreadable.txt", dest: "{{ dest }}", fail_on_missing: false}`
+- validate_checksum off: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}", validate_checksum: false}`
+- path with variables is expanded on the target: args `{src: "$FETCH_SRC/hello.txt", dest: "{{ dest }}"}`, environment `{FETCH_SRC: "{{ src }}"}`
+- check mode: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}"}`, check mode
+- src is required: args `{dest: "{{ dest }}"}`
+- dest is required: args `{src: "{{ src }}/hello.txt"}`
+- unsupported option: args `{src: "{{ src }}/hello.txt", dest: "{{ dest }}", bogus: true}`
+
+#### Dedicated checks
+
+- `tasks/no_python.yml`: The checksum and the content come from compiled modules only: with no Python interpreter on the target the task still works, and the builtin fails.
+
 ### file
 
 147 side-by-side cases in `tests/integration/targets/file/vars/main.yml`.
@@ -452,7 +499,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - file mode symbolic: args `{path: "{{ file_dir }}/file.txt", state: file, mode: "u+x,g-r,o="}`
 - file mode invalid: args `{path: "{{ file_dir }}/file.txt", state: file, mode: "abc"}`
 - file mode check mode: args `{path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}`, check mode
-- file mode without diff: args `{path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}`, diff mode off, *not compared before ansible-core 2.19: an older builtin returns the diff even without diff mode*
+- file mode without diff: args `{path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}`, diff mode off
 - file missing: args `{path: "{{ file_dir }}/missing.txt", state: file}`
 - file is a directory: args `{path: "{{ file_dir }}/tree", state: file}`
 - file is a directory, with _original_basename: args `{path: "{{ file_dir }}/tree", state: file, _original_basename: a.txt, mode: "0600"}`
@@ -469,7 +516,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - file unknown uid and gid in check mode: args `{path: "{{ file_dir }}/file.txt", state: file, owner: "987654", group: "987654"}`, check mode
 - file SELinux options without SELinux: args `{path: "{{ file_dir }}/file.txt", state: file, setype: tmp_t, seuser: _default}`
 - file path from an environment variable: args `{path: "$FILE_TEST_DIR/file.txt", state: file, mode: "0600"}`, environment `{FILE_TEST_DIR: "{{ file_dir }}"}`
-- file under a regular file: args `{path: "{{ file_dir }}/file.txt/inner", state: file}`, *not compared before ansible-core 2.21: an older builtin treats a path under a file as absent*
+- file under a regular file: args `{path: "{{ file_dir }}/file.txt/inner", state: file}`
 
 #### Times
 
@@ -501,7 +548,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - directory created with a trailing slash: args `{path: "{{ file_dir }}/new/", state: directory}`
 - directory created in check mode: args `{path: "{{ file_dir }}/new/a", state: directory}`, check mode
 - directory where a file is: args `{path: "{{ file_dir }}/file.txt", state: directory}`
-- directory under a file: args `{path: "{{ file_dir }}/file.txt/sub", state: directory}`, *not compared before ansible-core 2.21: an older builtin treats a path under a file as absent*
+- directory under a file: args `{path: "{{ file_dir }}/file.txt/sub", state: directory}`
 - directory through a symlink, followed: args `{path: "{{ file_dir }}/dirlink", state: directory, mode: "0700"}`
 - directory through a symlink, not followed: args `{path: "{{ file_dir }}/dirlink", state: directory, follow: false}`
 - directory recursive mode: args `{path: "{{ file_dir }}/tree", state: directory, recurse: true, mode: "u=rwX,g=rX,o="}`
@@ -512,7 +559,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - directory recursive in check mode: args `{path: "{{ file_dir }}/tree", state: directory, recurse: true, mode: "0700"}`, check mode
 - directory recursive creates it: args `{path: "{{ file_dir }}/new", recurse: true}`
 - directory created with times: args `{path: "{{ file_dir }}/new", state: directory, modification_time: "{{ fixed_time }}"}`
-- directory created with parents and times: args `{path: "{{ file_dir }}/new/a", state: directory, modification_time: "{{ fixed_time }}"}`, *not compared before ansible-core 2.19: an older builtin words the error differently*
+- directory created with parents and times: args `{path: "{{ file_dir }}/new/a", state: directory, modification_time: "{{ fixed_time }}"}`
 - recurse without state directory: args `{path: "{{ file_dir }}/file.txt", state: file, recurse: true}`
 
 #### state=link
@@ -520,7 +567,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - link created, absolute src: args `{path: "{{ file_dir }}/new-link", src: "{{ file_dir }}/file.txt", state: link}`
 - link created, relative src: args `{path: "{{ file_dir }}/new-link", src: file.txt, state: link}`
 - link created in check mode: args `{path: "{{ file_dir }}/new-link", src: file.txt, state: link}`, check mode
-- link to a missing src: args `{path: "{{ file_dir }}/new-link", src: nowhere, state: link}`, *not compared before ansible-core 2.19: an older builtin words the error differently*
+- link to a missing src: args `{path: "{{ file_dir }}/new-link", src: nowhere, state: link}`
 - link to a missing src, forced: args `{path: "{{ file_dir }}/new-link", src: nowhere, state: link, force: true}`
 - link to a missing src, forced, not followed: args `{path: "{{ file_dir }}/new-link", src: nowhere, state: link, force: true, follow: false}`
 - link unchanged: args `{path: "{{ file_dir }}/link.txt", src: file.txt, state: link}`
@@ -532,7 +579,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - link over a file: args `{path: "{{ file_dir }}/other.txt", src: file.txt, state: link}`
 - link over a file, forced: args `{path: "{{ file_dir }}/other.txt", src: file.txt, state: link, force: true}`
 - link over a hard link, forced: args `{path: "{{ file_dir }}/hard2", src: file.txt, state: link, force: true}`
-- link over an empty directory: args `{path: "{{ file_dir }}/empty", src: file.txt, state: link}`, *not compared before ansible-core 2.19: an older builtin words the error differently*
+- link over an empty directory: args `{path: "{{ file_dir }}/empty", src: file.txt, state: link}`
 - link over an empty directory, forced: args `{path: "{{ file_dir }}/empty", src: ../file.txt, state: link, force: true}`
 - link over a directory with files, forced: args `{path: "{{ file_dir }}/tree", src: file.txt, state: link, force: true}`
 - link with mode, followed: args `{path: "{{ file_dir }}/new-link", src: file.txt, state: link, mode: "0600"}`
@@ -558,7 +605,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - hard link into a directory: args `{path: "{{ file_dir }}/tree", src: "{{ file_dir }}/file.txt", state: hard}`
 - hard link into a directory, already linked: args `{path: "{{ file_dir }}/tree", src: "{{ file_dir }}/file.txt", state: hard}`, setup `ln file.txt tree/file.txt`
 - hard link with mode: args `{path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/file.txt", state: hard, mode: "0600"}`
-- hard link to a symlink, followed: args `{path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard}`, *not compared before ansible-core 2.18: an older builtin links the symlink itself*
+- hard link to a symlink, followed: args `{path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard}`
 - hard link to a symlink, not followed: args `{path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard, follow: false}`, *not compared before Python (on the target) 3.14: os.link links the symlink itself before Python 3.14 on Linux*
 - hard link inside a missing directory: args `{path: "{{ file_dir }}/missing/new-hard", src: "{{ file_dir }}/file.txt", state: hard}`
 
@@ -575,7 +622,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - touch an existing file in check mode: args `{path: "{{ file_dir }}/file.txt", state: touch}`, check mode
 - touch a directory: args `{path: "{{ file_dir }}/tree", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}`
 - touch through a symlink: args `{path: "{{ file_dir }}/link.txt", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}`
-- touch in a missing directory: args `{path: "{{ file_dir }}/missing/new.txt", state: touch}`, *not compared before ansible-core 2.19: an older builtin words the error differently*
+- touch in a missing directory: args `{path: "{{ file_dir }}/missing/new.txt", state: touch}`
 - touch a new file with an unknown owner: args `{path: "{{ file_dir }}/new.txt", state: touch, owner: no_such_user_xyz}`
 - touch a new file with a bad time: args `{path: "{{ file_dir }}/new.txt", state: touch, modification_time: "soon"}`
 
@@ -591,7 +638,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - absent empty directory: args `{path: "{{ file_dir }}/empty", state: absent}`
 - absent hard link: args `{path: "{{ file_dir }}/hard2", state: absent}`
 - absent ignores mode: args `{path: "{{ file_dir }}/file.txt", state: absent, mode: "0600"}`
-- absent in a read-only directory: args `{path: "{{ file_dir }}/ro/file", state: absent}`, setup `mkdir ro && touch ro/file && chmod 0555 ro`, *as root, only checks that both fail or both succeed*, *not compared before ansible-core 2.19: an older builtin words the error differently*
+- absent in a read-only directory: args `{path: "{{ file_dir }}/ro/file", state: absent}`, setup `mkdir ro && touch ro/file && chmod 0555 ro`, *as root, only checks that both fail or both succeed*
 - absent tree with a read-only subdirectory: args `{path: "{{ file_dir }}/tree", state: absent}`, setup `chmod 0555 tree/sub/deep`, *as root, only checks that both fail or both succeed*
 
 #### Default state
@@ -609,7 +656,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - diff peek on binary: args `{path: "{{ file_dir }}/binary.bin", _diff_peek: true}`
 - diff peek on a missing file: args `{path: "{{ file_dir }}/missing.txt", _diff_peek: true}`
 - diff peek on a directory: args `{path: "{{ file_dir }}/tree", _diff_peek: true}`
-- path through a non-searchable directory: args `{path: "{{ file_dir }}/locked/inner", state: touch}`, setup `mkdir locked && chmod 0 locked`, *as root, only checks that both fail or both succeed*, *not compared before ansible-core 2.21: an older builtin doesn't warn about the permissions*
+- path through a non-searchable directory: args `{path: "{{ file_dir }}/locked/inner", state: touch}`, setup `mkdir locked && chmod 0 locked`, *as root, only checks that both fail or both succeed*
 - name alias: args `{name: "{{ file_dir }}/file.txt", state: file}`
 - dest alias: args `{dest: "{{ file_dir }}/file.txt", state: file}`
 - invalid state: args `{path: "{{ file_dir }}/file.txt", state: maybe}`
@@ -617,6 +664,243 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - unsupported option: args `{path: "{{ file_dir }}/file.txt", bogus: true}`
 - invalid boolean: args `{path: "{{ file_dir }}/file.txt", recurse: maybe}`
 - unsafe_writes accepted: args `{path: "{{ file_dir }}/file.txt", state: file, unsafe_writes: true}`
+
+### find
+
+92 side-by-side cases in `tests/integration/targets/find/vars/main.yml`.
+
+#### Walking
+
+- defaults: args `{}`
+- recurse: args `{recurse: true}`
+- recurse with depth 1: args `{recurse: true, depth: 1}`
+- recurse with depth 2: args `{recurse: true, depth: 2}`
+- depth 0 is unlimited: args `{recurse: true, depth: 0}`
+- depth without recurse: args `{depth: 3}`
+- hidden: args `{recurse: true, hidden: true}`
+- follow links into directories: args `{recurse: true, follow: true}`
+- path with a trailing slash: args `{paths: "{{ tree }}/"}`
+- path with repeated slashes and dots: args `{paths: "{{ tree }}//./sub/../sub", recurse: true}`
+- several paths: args `{paths: ["{{ tree }}/sub", "{{ tree }}/sub/deep"]}`
+- comma separated paths: args `{paths: "{{ tree }}/sub,{{ tree }}/sub/deep"}`
+- path alias: args `{path: "{{ tree }}/sub"}`
+- name alias: args `{name: "{{ tree }}/sub"}`
+- missing path: args `{paths: "{{ tree }}/missing"}`
+- path is a file: args `{paths: "{{ tree }}/a.txt"}`
+- missing path and a good one: args `{paths: ["{{ tree }}/missing", "{{ tree }}/sub"]}`
+- path through a link: args `{paths: "{{ tree }}/link-to-sub"}`
+- path with variables is expanded on the target: args `{paths: "$FIND_TREE/sub"}`, environment `{FIND_TREE: "{{ tree }}"}`
+- path is required: args `{paths: []}`
+
+#### File types
+
+- file_type any: args `{file_type: any, recurse: true}`
+- file_type directory: args `{file_type: directory, recurse: true}`
+- file_type link: args `{file_type: link}`
+- invalid file_type: args `{file_type: socket}`
+
+#### Patterns
+
+- glob pattern: args `{patterns: '*.txt'}`
+- glob patterns are case-sensitive: args `{patterns: '*.TXT'}`
+- several glob patterns: args `{patterns: ['*.txt', '*.log']}`
+- comma separated patterns: args `{patterns: '*.txt,*.log'}`
+- pattern alias: args `{pattern: '?.txt'}`
+- glob character class: args `{patterns: '[ab].*'}`
+- excludes: args `{patterns: '*.txt', excludes: 'a*'}`
+- exclude alias: args `{exclude: '*.txt'}`
+- excludes without patterns: args `{excludes: ['*.txt', '*.log']}`
+- regex patterns: args `{patterns: '.*\.txt$', use_regex: true}`
+- regex patterns match from the start: args `{patterns: '\.txt', use_regex: true}`
+- regex excludes: args `{patterns: '.*', excludes: '^[ab]', use_regex: true}`
+- regex excludes without patterns: args `{excludes: '.*\.txt', use_regex: true}`
+- regex case-insensitive: args `{patterns: '(?i).*\.txt', use_regex: true}`
+- invalid regex pattern: args `{patterns: '(', use_regex: true}`, volatile `[skipped_paths, warnings]`
+- invalid regex exclude never reached: args `{patterns: 'nomatch', excludes: '(', use_regex: true}`
+
+#### contains
+
+- contains matches at the start of a line: args `{contains: hello, recurse: true}`
+- contains anywhere in a line: args `{contains: '.*hello'}`
+- contains with read_whole_file: args `{contains: world, read_whole_file: true}`
+- contains with read_whole_file across lines: args `{contains: 'hello\nworld', read_whole_file: true}`
+- contains dollar before the newline: args `{contains: 'world$', patterns: 'a.txt'}`
+- contains with windows line endings: args `{contains: 'one$', patterns: 'crlf.txt'}`
+- contains is ignored for directories: args `{contains: zzz, file_type: directory}`
+- contains in a file that is not utf-8: args `{contains: zzz}`
+- contains matching before bad bytes still fails: args `{contains: ok, patterns: 'bad-utf8.txt'}`
+- contains with latin-1: args `{contains: 'café', encoding: latin-1, patterns: 'latin.txt'}`
+- contains with ascii fails on other files: args `{contains: zzz, encoding: ascii}`
+- contains with an unknown encoding: args `{contains: zzz, encoding: no-such-codec}`
+- contains with an unreadable file: args `{contains: secret, patterns: 'unreadable.txt'}`
+- invalid contains regex: args `{contains: '('}`, volatile `[skipped_paths, warnings]`
+
+#### Age and size
+
+- old files: args `{age: 1d}`
+- new files: args `{age: -1d}`
+- age in weeks: args `{age: 52w}`
+- age in upper case: args `{age: 1D}`
+- new files by ctime: args `{age: -1d, age_stamp: ctime}`
+- old files by ctime: args `{age: 1d, age_stamp: ctime}`
+- age by atime: args `{age: 1h, age_stamp: atime, patterns: '*.txt'}`
+- invalid age: args `{age: abc}`
+- invalid age_stamp: args `{age: 1d, age_stamp: birth}`
+- recently touched file: args `{age: -1h}`, setup `touch new.txt`
+- size at least: args `{size: 1k}`
+- size at most: args `{size: -1b}`
+- size in bytes: args `{size: 2048}`
+- size with any file type: args `{size: 1k, file_type: any}`
+- invalid size: args `{size: 1x}`
+
+#### Mode
+
+- exact mode: args `{mode: "0644"}`
+- mode without a leading zero: args `{mode: "600"}`
+- mode with any bits: args `{mode: "0100", exact_mode: false}`
+- setuid mode: args `{mode: "4755"}`
+- symbolic mode: args `{mode: "u=rw,g=r,o=r"}`
+- invalid symbolic mode: args `{mode: "x=y"}`
+- mode as an integer: args `{mode: 420}`
+- empty mode: args `{mode: ""}`
+- mode on directories: args `{mode: "0755", file_type: directory}`
+
+#### Checksums
+
+- checksums: args `{get_checksum: true, patterns: '*.txt', excludes: unreadable.txt}`
+- sha256 checksums: args `{get_checksum: true, checksum_algorithm: sha256, patterns: 'a.txt'}`
+- checksum alias: args `{get_checksum: true, checksum: md5, patterns: 'a.txt'}`
+- checksum of an unreadable file: args `{get_checksum: true, patterns: 'unreadable.txt'}`
+- checksums with any file type: args `{get_checksum: true, file_type: any, patterns: '[ab]*'}`
+
+#### limit
+
+- limit: args `{limit: 2}`
+- limit with recurse: args `{limit: 3, recurse: true}`
+- limit larger than the matches: args `{limit: 100}`
+- limit zero: args `{limit: 0}`
+- negative limit: args `{limit: -1}`
+
+#### Unreadable entries
+
+- unreadable directory: args `{recurse: true, file_type: any}`
+- unsearchable directory: args `{paths: "{{ tree }}/unsearchable-dir"}`
+
+#### Modes and options
+
+- check mode: args `{patterns: '*.txt'}`, check mode
+- unsupported option: args `{bogus: true}`
+
+#### Dedicated checks
+
+- `tasks/unsupported_regexp.yml`: Python regexp features with no RE2 equivalent (lookahead, lookbehind, backreferences, verbose mode) in patterns, excludes or contains make the compiled module fail with a message naming the feature and RE2, instead of matching differently. Only the compiled module runs: the builtin supports them.
+
+### get_url
+
+78 side-by-side cases in `tests/integration/targets/get_url/vars/main.yml`.
+
+#### Downloads
+
+- download to a file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}`
+- download into a directory: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}"}`
+- download into a directory with a trailing slash: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/"}`
+- download named by Content-Disposition: args `{url: "{{ http_url }}/download/a.txt?cd=named.txt", dest: "{{ dest_dir }}"}`
+- Content-Disposition with a path keeps the basename: args `{url: "{{ http_url }}/download/a.txt?cd=../../etc/evil.txt", dest: "{{ dest_dir }}"}`
+- URL without a file name is index.html: args `{url: "{{ http_url }}/content/?body=x", dest: "{{ dest_dir }}"}`
+- URL with a query keeps the path's name: args `{url: "{{ http_url }}/content/page.html?body=x", dest: "{{ dest_dir }}"}`
+- download named after a redirect: args `{url: "{{ http_url }}/redirect/302?to=/download/b.txt", dest: "{{ dest_dir }}"}`
+- unchanged download: args `{url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true}`, setup `printf 'same\n' > "{{ dest_dir }}/same.txt"`
+- replace a different file with force: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`
+- existing file is not modified since: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`
+- existing file without If-Modified-Since support: args `{url: "{{ http_url }}/content?body=new%0A", dest: "{{ dest_dir }}/a.txt"}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`
+- response without a length: args `{url: "{{ http_url }}/no-length", dest: "{{ dest_dir }}/n.txt"}`
+- empty response: args `{url: "{{ http_url }}/content", dest: "{{ dest_dir }}/empty.txt"}`
+- binary response: args `{url: "{{ http_url }}/content?b64=AAEC%2F%2F8%3D", dest: "{{ dest_dir }}/bin"}`
+- gzip response decompressed: args `{url: "{{ http_url }}/gzip", dest: "{{ dest_dir }}/g.json"}`
+- gzip response kept: args `{url: "{{ http_url }}/gzip", dest: "{{ dest_dir }}/g.json.gz", decompress: false}`
+- dest with variables is expanded on the target: args `{url: "{{ http_url }}/download/a.txt", dest: "$GU_DEST/a.txt"}`, environment `{GU_DEST: "{{ dest_dir }}"}`
+
+#### Checksums
+
+- matching sha256 checksum: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}`
+- matching sha1 checksum in upper case: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha1:{{ a_sha1 | upper }}"}`
+- matching md5 checksum: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "md5:{{ a_md5 }}"}`
+- checksum with a zero-width space: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:​{{ a_sha256 }}"}`
+- mismatched checksum: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ b_sha256 }}"}`
+- checksum already matching the file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}`, setup `printf 'downloaded a.txt\n' > "{{ dest_dir }}/a.txt"`
+- checksum already matching, mode changes: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}", mode: "0600"}`, setup `printf 'downloaded a.txt\n' > "{{ dest_dir }}/a.txt"`
+- checksum not matching the file forces the download: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`
+- checksum without an algorithm: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "{{ a_sha256 }}"}`
+- checksum that is not hexadecimal: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:xyz"}`
+- empty checksum after the algorithm: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:"}`
+- unknown checksum algorithm: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha3:{{ a_sha256 }}"}`, *fails only*
+- unknown checksum algorithm with an existing file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha3:{{ a_sha256 }}"}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`, *fails only*
+- checksum from a GNU checksum file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_gnu }}"}`
+- checksum from a BSD checksum file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_bsd }}"}`
+- checksum file with a single checksum: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ a_sha256 }}"}`
+- checksum file without the file: args `{url: "{{ http_url }}/download/c.txt", dest: "{{ dest_dir }}/c.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_gnu }}"}`
+- checksum file that can't be downloaded: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/status/404"}`
+
+#### Errors
+
+- not found: args `{url: "{{ http_url }}/status/404", dest: "{{ dest_dir }}/x"}`
+- server error with a reason: args `{url: "{{ http_url }}/status/500?reason=Broken", dest: "{{ dest_dir }}/x"}`
+- connection refused: args `{url: "{{ closed_url }}/x", dest: "{{ dest_dir }}/x"}`
+- missing destination directory: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/missing/a.txt"}`
+- unwritable destination directory: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/sub/a.txt"}`, setup `chmod 0555 "{{ dest_dir }}/sub"`
+- unwritable destination file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt" && chmod 0444 "{{ dest_dir }}/a.txt"`
+- invalid URL: args `{url: "not a url", dest: "{{ dest_dir }}/x"}`
+- URL without a host: args `{url: "http:///x", dest: "{{ dest_dir }}/x"}`
+- url is required: args `{dest: "{{ dest_dir }}/x"}`
+- dest is required: args `{url: "{{ http_url }}/download/a.txt"}`
+- unsupported option: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/x", bogus: true}`
+- timeout: args `{url: "{{ http_url }}/delay/3", dest: "{{ dest_dir }}/x", timeout: 1}`
+
+#### tmp_dest
+
+- tmp_dest: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ tmp_dir }}"}`
+- missing tmp_dest: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ gu_dir }}/nope"}`
+- tmp_dest is a file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ dest_dir }}/f"}`, setup `touch "{{ dest_dir }}/f"`
+
+#### Requests
+
+- headers and agent: args `{url: "{{ http_url }}/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Test: one, Accept: text/plain}, http_agent: tester/1.0}`
+- basic auth after a challenge: args `{url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", url_username: u, url_password: s3cr3t}`
+- forced basic auth with aliases: args `{url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", username: u, password: s3cr3t, force_basic_auth: true}`
+- wrong password: args `{url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", url_username: u, url_password: wrong}`
+- credentials in the URL are masked: args `{url: "http://u:s3cr3t@127.0.0.1:{{ http_url.split(':')[-1] }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json"}`
+- redirect keeps headers by default: args `{url: "{{ http_url }}/redirect/301?to=/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Keep: yes}}`
+- unredirected headers: args `{url: "{{ http_url }}/redirect/302?to=/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Drop: yes}, unredirected_headers: [x-drop]}`
+- redirect loop: args `{url: "{{ http_url }}/redirect-loop", dest: "{{ dest_dir }}/x"}`
+- through a proxy: args `{url: "http://example.invalid/echo", dest: "{{ dest_dir }}/e.json"}`, environment `{http_proxy: "{{ http_url }}"}`
+- use_proxy off: args `{url: "{{ http_url }}/echo", dest: "{{ dest_dir }}/e.json", use_proxy: false}`, environment `{http_proxy: "http://127.0.0.1:1"}`
+- https without validation: args `{url: "{{ https_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", validate_certs: false}`
+- https with an unknown CA: args `{url: "{{ https_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}`
+- client certificate
+- netrc credentials: args `{url: "{{ http_url }}/basic-auth/nuser/npass", dest: "{{ dest_dir }}/e.json"}`, setup `printf 'machine 127.0.0.1 login nuser password npass\n' > "{{ gu_dir }}/netrc" && chmod 0600 "{{ gu_dir }}/netrc"`, environment `{NETRC: "{{ gu_dir }}/netrc"}`
+- netrc ignored: args `{url: "{{ http_url }}/basic-auth/nuser/npass", dest: "{{ dest_dir }}/e.json", use_netrc: false}`, setup `printf 'machine 127.0.0.1 login nuser password npass\n' > "{{ gu_dir }}/netrc" && chmod 0600 "{{ gu_dir }}/netrc"`, environment `{NETRC: "{{ gu_dir }}/netrc"}`
+
+#### File options
+
+- backup: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true, backup: true}`, setup `printf 'old\n' > "{{ dest_dir }}/a.txt"`
+- no backup when unchanged: args `{url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true, backup: true}`, setup `printf 'same\n' > "{{ dest_dir }}/same.txt"`
+- mode: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", mode: "0600"}`
+- symbolic mode: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", mode: "u=rw,g=,o="}`
+- mode on an unchanged file: args `{url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true, mode: "0640"}`, setup `printf 'same\n' > "{{ dest_dir }}/same.txt"`
+- owner: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", owner: "{{ current_user }}"}`
+- unknown owner: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", owner: no_such_user_xyz}`
+- unsafe_writes is accepted: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", unsafe_writes: true}`
+
+#### Check mode
+
+- check mode with a new file: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}`, check mode
+- check mode with an existing file: args `{url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true}`, setup `printf 'same\n' > "{{ dest_dir }}/same.txt"`, check mode
+- check mode into a directory: args `{url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}"}`, check mode
+- check mode with a failing URL: args `{url: "{{ http_url }}/status/404", dest: "{{ dest_dir }}/x"}`, check mode
+
+#### Dedicated checks
+
+- `tasks/unsupported.yml`: What the compiled module can't do fails the task and says why: GSSAPI needs the Python gssapi library, only http and https URLs are supported, and checksums only use md5, sha1 and SHA-2 (not Python's sha3 and blake2). Only the compiled module runs.
 
 ### lineinfile
 
@@ -630,8 +914,8 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - empty file: file `""`, args `{line: first}`
 - indented line is a different line: file `"  one\n"`, args `{line: one}`
 - unicode line: file `"uno\n"`, args `{line: "dös ✓"}`
-- windows line endings are normalized: file `"one\r\ntwo\r\n"`, args `{line: three}`, *not compared before ansible-core 2.20: it works on bytes and keeps \r\n*
-- old mac line endings are normalized: file `"one\rtwo\r"`, args `{line: two}`, *not compared before ansible-core 2.20: it works on bytes and keeps \r*
+- windows line endings are normalized: file `"one\r\ntwo\r\n"`, args `{line: three}`
+- old mac line endings are normalized: file `"one\rtwo\r"`, args `{line: two}`
 - line containing a newline: file `"one\n"`, args `{line: "two\nthree"}`
 
 #### regexp
@@ -642,14 +926,14 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - regexp already matching the line: file `"key=new\n"`, args `{regexp: '^key=', line: key=new}`
 - regexp dollar matches before the newline: file `"a=1\nb=2\n"`, args `{regexp: '^b=\d$', line: b=3}`
 - regexp \Z does not match before the newline: file `"a=1\nb=2\n"`, args `{regexp: '2\Z', line: b=3}`
-- regexp \w is unicode-aware: file `"näme=1\n"`, args `{regexp: '^\w+=', line: x=2}`, *not compared before ansible-core 2.20: it matches bytes, where \w is ASCII-only*
-- regexp \d is unicode-aware: file `"٣\nplain\n"`, args `{regexp: '^\d$', line: digit}`, *not compared before ansible-core 2.20: it matches bytes, where \d is ASCII-only*
+- regexp \w is unicode-aware: file `"näme=1\n"`, args `{regexp: '^\w+=', line: x=2}`
+- regexp \d is unicode-aware: file `"٣\nplain\n"`, args `{regexp: '^\d$', line: digit}`
 - regexp \s matches a vertical tab: file `"a\x0bb\n"`, args `{regexp: 'a\sb', line: spaced}`
 - regexp \S and \W: file `"x-y\n"`, args `{regexp: '^\S\W\S$', line: matched}`
 - regexp case-insensitive flag: file `"KEY=1\n"`, args `{regexp: '(?i)^key=', line: key=2}`
 - regexp scoped flag: file `"KEY=1\n"`, args `{regexp: '^(?i:key)=', line: key=2}`
 - regexp {,n} quantifier: file `"aa\n"`, args `{regexp: '^a{,2}$', line: b}`
-- regexp unicode escape: file `"café\n"`, args `{regexp: 'caf\u00e9', line: coffee}`, *not compared before ansible-core 2.20: byte patterns have no \u escape*
+- regexp unicode escape: file `"café\n"`, args `{regexp: 'caf\u00e9', line: coffee}`
 - regexp octal escape: file `"a\tb\n"`, args `{regexp: 'a\011b', line: tabbed}`
 - regexp comment group: file `"ab\n"`, args `{regexp: 'a(?#comment)b', line: c}`
 - regexp posix-looking class is literal in Python: file `"a\n:\n"`, args `{regexp: '^[[:a]$', line: replaced}`
@@ -718,7 +1002,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - regexp and search_string are mutually exclusive: file `"a\n"`, args `{line: b, regexp: a, search_string: a}`
 - backrefs and search_string are mutually exclusive: file `"a\n"`, args `{line: b, search_string: a, backrefs: true}`
 - invalid state: file `"a\n"`, args `{line: b, state: maybe}`
-- unsupported option: file `"a\n"`, args `{line: b, bogus: true}`, *not compared before ansible-core 2.20: it has no encoding option, so the supported options listed differ*
+- unsupported option: file `"a\n"`, args `{line: b, bogus: true}`
 - path is required: args `{line: b}`, no path given
 
 #### Aliases
@@ -761,12 +1045,12 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### Encodings
 
-- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{line: "thé", encoding: latin-1}`, *not compared before ansible-core 2.20: it has no encoding option*
-- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{line: three, encoding: utf-16}`, *not compared before ansible-core 2.20: it has no encoding option*
+- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{line: "thé", encoding: latin-1}`
+- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{line: three, encoding: utf-16}`
 - utf-8 with a BOM: file bytes `"{{ '\ufeffone\n' | b64encode }}"`, args `{line: two}`
-- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{line: x}`, *not compared before ansible-core 2.20: it works on bytes, so any content is accepted*
-- unencodable line: file `"a\n"`, args `{line: "é", encoding: ascii}`, *not compared before ansible-core 2.20: it has no encoding option*
-- unknown encoding: file `"a\n"`, args `{line: b, encoding: no-such-codec}`, *not compared before ansible-core 2.20: it has no encoding option*
+- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{line: x}`
+- unencodable line: file `"a\n"`, args `{line: "é", encoding: ascii}`
+- unknown encoding: file `"a\n"`, args `{line: b, encoding: no-such-codec}`
 
 #### validate
 
@@ -802,6 +1086,135 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - `tasks/platform.yml`: compiled_builtin_platform set by hand (as from inventory, when facts and uname aren't available) is used as given when valid, and rejected with the list of valid values, plus a suggestion for uname-style values, when not.
 
+### replace
+
+91 side-by-side cases in `tests/integration/targets/replace/vars/main.yml`.
+
+#### Replacing
+
+- replace every match: file `"a=1\nb=1\na=2\n"`, args `{regexp: '^a=', replace: 'A='}`
+- no match: file `"a\nb\n"`, args `{regexp: 'zzz', replace: 'y'}`
+- replacement equal to the match: file `"a\n"`, args `{regexp: 'a', replace: 'a'}`
+- remove matches with the default replace: file `"keep # comment\nother\n"`, args `{regexp: '\s*#.*$'}`
+- group references: file `"name=old value\n"`, args `{regexp: '^(\w+)=(.*)$', replace: '\2=\1'}`
+- named group references: file `"name=old\n"`, args `{regexp: '^(?P<key>\w+)=(?P<val>.*)$', replace: '\g<val>=\g<key> \g<0>'}`
+- optional group that did not match: file `"b\n"`, args `{regexp: '^(a)?(b)$', replace: 'x\1y\2'}`
+- escapes in the replacement: file `"a b\n"`, args `{regexp: '^(\w) (\w)$', replace: '\1\t\2\\'}`
+- octal escape in the replacement: file `"a\n"`, args `{regexp: 'a', replace: '\101\0'}`
+- unknown escapes kept in the replacement: file `"a\n"`, args `{regexp: 'a', replace: '\-\.\é'}`
+- newline in the replacement: file `"a b\n"`, args `{regexp: ' ', replace: '\n'}`
+- multiline caret matches each line: file `"one\ntwo\n"`, args `{regexp: '^', replace: '# '}`
+- multiline dollar matches each line end: file `"one\ntwo\n"`, args `{regexp: '$', replace: ';'}`
+- empty matches after a match are replaced: file `"a  \nb  \n"`, args `{regexp: '\s*$', replace: '-'}`
+- empty pattern: file `"ab\n"`, args `{regexp: '', replace: '-'}`
+- star matches empty strings: file `"abxd\n"`, args `{regexp: 'x*', replace: '-'}`
+- dot does not match newlines: file `"a\nb\n"`, args `{regexp: 'a.b', replace: 'x'}`
+- dotall flag: file `"a\nb\n"`, args `{regexp: '(?s)a.b', replace: 'x'}`
+- case-insensitive flag: file `"Key=1\nkey=2\n"`, args `{regexp: '(?i)^key', replace: 'K'}`
+- unicode classes: file `"näme=١\n"`, args `{regexp: '\w+=\d', replace: 'x'}`
+- match across lines: file `"a\nb\nc\n"`, args `{regexp: 'a\nb', replace: 'ab'}`
+- remove blank lines: file `"a\n\n  \nb\n"`, args `{regexp: '^\s*\n', replace: ''}`
+- unicode content: file `"héllo wörld ✓\n"`, args `{regexp: 'ö', replace: 'oe'}`
+- windows line endings become newlines: file `"a\r\nb\r\n"`, args `{regexp: 'a', replace: 'x'}`
+- windows line endings unchanged without a match: file `"a\r\nb\r\n"`, args `{regexp: 'zzz', replace: 'x'}`
+- old mac line endings become newlines: file `"a\rb\r"`, args `{regexp: '^b$', replace: 'x'}`
+- file without a trailing newline: file `"a\nb"`, args `{regexp: 'b$', replace: 'c'}`
+- empty file: file `""`, args `{regexp: '^', replace: 'x'}`
+
+#### after and before
+
+- after: file `"a\nSTART\na\nb\n"`, args `{regexp: '^a$', replace: 'x', after: 'START'}`
+- before: file `"a\nEND\na\n"`, args `{regexp: '^a$', replace: 'x', before: 'END'}`
+- after and before: file `"a\nSTART\na\nEND\na\n"`, args `{regexp: '^a$', replace: 'x', after: 'START\n', before: 'END'}`
+- after and before take the shortest section: file `"S\na\nE\na\nE\n"`, args `{regexp: 'a', replace: 'x', after: 'S', before: 'E'}`
+- after without a match: file `"a\n"`, args `{regexp: 'a', replace: 'x', after: 'nomatch'}`
+- before without a match: file `"a\n"`, args `{regexp: 'a', replace: 'x', before: 'nomatch'}`
+- after and before in the wrong order: file `"END\na\nSTART\n"`, args `{regexp: 'a', replace: 'x', after: 'START', before: 'END'}`
+- after with multiline flag: file `"x <VirtualHost *>\na\n<VirtualHost *>\na\n</VirtualHost>\n"`, args `{regexp: '^a$', replace: 'b', after: '(?m)^<VirtualHost [*]>', before: '</VirtualHost>'}`
+- after does not use multiline: file `"x\nSTART\na\n"`, args `{regexp: 'a', replace: 'b', after: '^START'}`
+- caret at the start of the section: file `"xa\na\n"`, args `{regexp: '^a', replace: 'b', after: 'x'}`
+- empty after is ignored: file `"a\n"`, args `{regexp: 'a', replace: 'x', after: ''}`
+- after with a group of its own: file `"k=1\na\n"`, args `{regexp: 'a', replace: 'x', after: '(k)=1'}`
+- replacement referring to after's group: file `"k=1\na\n"`, args `{regexp: 'a', replace: '\1', after: '(k)=1'}`
+- invalid after regexp: file `"a\n"`, args `{regexp: 'a', replace: 'x', after: '('}`, *fails only*
+
+#### Errors
+
+- invalid regexp: file `"a\n"`, args `{regexp: '(', replace: 'x'}`, *fails only*
+- bad escape in the replacement: file `"a\n"`, args `{regexp: 'a', replace: '\q'}`
+- invalid group reference: file `"a\n"`, args `{regexp: '(a)', replace: '\2'}`
+- invalid group reference without a match: file `"a\n"`, args `{regexp: '(z)', replace: '\2'}`
+- unknown group name: file `"a\n"`, args `{regexp: '(?P<k>a)', replace: '\g<nope>'}`
+- missing group name: file `"a\n"`, args `{regexp: '(a)', replace: '\g<>'}`
+- bad character in group name: file `"a\n"`, args `{regexp: '(a)', replace: '\g<1a>'}`
+- unterminated group name: file `"a\n"`, args `{regexp: '(a)', replace: '\g<a'}`
+- missing angle bracket: file `"a\n"`, args `{regexp: '(a)', replace: '\g'}`
+- trailing backslash: file `"a\n"`, args `{regexp: 'a', replace: 'x\'}`
+- octal escape out of range: file `"a\n"`, args `{regexp: '(a)', replace: '\400'}`
+- regexp is required: file `"a\n"`, args `{replace: x}`
+- path is required: args `{regexp: a}`, no path given
+- path is a directory: args `{path: "{{ rep_dir }}", regexp: a}`
+- missing file: args `{path: "{{ rep_dir }}/missing.txt", regexp: a}`
+- unreadable file: file `"a\n"`, file mode `"0000"`, args `{regexp: a, replace: b}`
+- unsupported option: file `"a\n"`, args `{regexp: a, bogus: true}`
+
+#### Aliases
+
+- dest alias: file `"a\n"`, args `{dest: "{{ rep_file }}", regexp: a, replace: b}`
+- name alias: file `"a\n"`, args `{name: "{{ rep_file }}", regexp: a, replace: b}`
+- destfile alias: file `"a\n"`, args `{destfile: "{{ rep_file }}", regexp: a, replace: b}`
+- path with variables is expanded on the target: file `"a\n"`, args `{path: "$REP_DIR/file.txt", regexp: a, replace: b}`, environment `{REP_DIR: "{{ rep_dir }}"}`
+
+#### Backups
+
+- backup when changed: file `"a\n"`, args `{regexp: a, replace: b, backup: true}`
+- no backup when unchanged: file `"a\n"`, args `{regexp: z, replace: b, backup: true}`
+
+#### Check and diff modes
+
+- check mode with a change: file `"a\n"`, args `{regexp: a, replace: b}`, check mode
+- check mode without a change: file `"a\n"`, args `{regexp: z, replace: b}`, check mode
+- check mode with a mode change: file `"a\n"`, args `{regexp: z, replace: b, mode: "0600"}`, check mode
+- diff mode off: file `"a\n"`, args `{regexp: a, replace: b}`, diff mode off
+
+#### File attributes
+
+- mode as an octal string: file `"a\n"`, args `{regexp: a, replace: b, mode: "0600"}`
+- mode as an integer: file `"a\n"`, args `{regexp: a, replace: b, mode: 0600}`
+- symbolic mode: file `"a\n"`, args `{regexp: a, replace: b, mode: "u+x,g-r,o="}`
+- only the mode changes: file `"a\n"`, args `{regexp: z, replace: b, mode: "0600"}`
+- mode after a before/after miss is not applied: file `"a\n"`, args `{regexp: a, replace: b, after: nomatch, mode: "0600"}`
+- invalid mode: file `"a\n"`, args `{regexp: a, replace: b, mode: "abc"}`
+- existing permissions are kept on rewrite: file `"a\n"`, args `{regexp: a, replace: b}`, file mode `"0640"`
+- owner by name: file `"a\n"`, args `{regexp: a, replace: b, owner: "{{ current_user }}"}`
+- unknown owner: file `"a\n"`, args `{regexp: a, replace: b, owner: no_such_user_xyz}`
+- group: file `"a\n"`, args `{regexp: z, replace: b, group: "{{ other_group }}"}`
+- unknown group: file `"a\n"`, args `{regexp: a, replace: b, group: no_such_group_xyz}`
+- unsafe_writes is accepted: file `"a\n"`, args `{regexp: a, replace: b, unsafe_writes: true}`
+
+#### Encodings
+
+- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{regexp: 'é', replace: 'è', encoding: latin-1}`
+- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{regexp: 'two', replace: 'deux', encoding: utf-16}`
+- utf-8 with a BOM: file bytes `"{{ '﻿one\n' | b64encode }}"`, args `{regexp: 'one', replace: 'two'}`
+- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{regexp: 'caf', replace: 'x'}`
+- unencodable replacement: file `"a\n"`, args `{regexp: a, replace: "é", encoding: ascii}`
+- unknown encoding: file `"a\n"`, args `{regexp: a, replace: b, encoding: no-such-codec}`
+
+#### validate
+
+- validate passes: file `"a\n"`, args `{regexp: a, replace: b, validate: "grep -q b %s"}`
+- validate fails: file `"a\n"`, args `{regexp: a, replace: b, validate: "grep -q zzz %s"}`
+- validate without %s: file `"a\n"`, args `{regexp: a, replace: b, validate: "true"}`
+
+#### Symlinks
+
+- a symlink's target is updated: file `"a\n"`, args `{path: "{{ rep_dir }}/link.txt", regexp: a, replace: b}`, through a symlink
+
+#### Dedicated checks
+
+- `tasks/unsupported_regexp.yml`: Python regexp features with no RE2 equivalent (lookahead, lookbehind, backreferences, verbose mode) in regexp, after or before make the compiled module fail with a message naming the feature and RE2, instead of matching differently, and leave the file untouched. Only the compiled module runs: the builtin supports them.
+
 ### shell
 
 38 side-by-side cases in `tests/integration/targets/shell/vars/main.yml`.
@@ -816,7 +1229,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - command substitution: args ``{cmd: "echo $(echo nested) `echo backticks`"}``
 - and and or: args `{cmd: "false || echo fallback && echo next"}`
 - semicolons: args `{cmd: "echo one; echo two"}`
-- multi-line script with set -e: *not compared before ansible-core 2.21: its msg is "non-zero return code"*
+- multi-line script with set -e
 - heredoc
 - quoting and special characters: args `{cmd: "echo 'single $HOME' \"double\" \\$escaped *not-a-glob"}`
 - unicode: args `{cmd: "echo 'héllo ✓'"}`
@@ -825,9 +1238,9 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### Output and return codes
 
-- non-zero exit: args `{cmd: "echo failing; exit 3"}`, *not compared before ansible-core 2.21: its msg is "non-zero return code"*
-- killed by a signal: args `{cmd: "kill -TERM $$"}`, *not compared before ansible-core 2.21: its msg is "non-zero return code"*
-- command not found: args `{cmd: "nonexistent_command_xyz"}`, *not compared before ansible-core 2.21: its msg is "non-zero return code"*
+- non-zero exit: args `{cmd: "echo failing; exit 3"}`
+- killed by a signal: args `{cmd: "kill -TERM $$"}`
+- command not found: args `{cmd: "nonexistent_command_xyz"}`
 - trailing newlines are stripped: args `{cmd: "printf 'a\\n\\n'"}`
 - strip_empty_ends false: args `{cmd: "printf 'a\\n\\n'", strip_empty_ends: false}`
 - large output: args `{cmd: "head -c 300000 /dev/zero | tr '\\0' a"}`
@@ -838,12 +1251,12 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - stdin: args `{cmd: "cat | tr a-z A-Z", stdin: "shout"}`
 - stdin without added newline: args `{cmd: "cat", stdin: "no newline", stdin_add_newline: false}`
 - chdir: args `{cmd: "pwd", chdir: "{{ shell_dir }}"}`
-- chdir that does not exist: args `{cmd: "pwd", chdir: "{{ shell_dir }}/missing"}`, *not compared before ansible-core 2.19: its msg includes the OS error*
+- chdir that does not exist: args `{cmd: "pwd", chdir: "{{ shell_dir }}/missing"}`
 - creates exists: args `{cmd: "echo ran", creates: "{{ shell_dir }}/exists.txt"}`
 - creates missing: args `{cmd: "echo ran", creates: "{{ shell_dir }}/missing.txt"}`
 - removes missing: args `{cmd: "echo ran", removes: "{{ shell_dir }}/missing.txt"}`
 - executable bash: args `{cmd: "arr=(a b c); [[ ${arr[1]} == b ]] && echo bash", executable: /bin/bash}`
-- executable that does not exist: args `{cmd: "echo hi", executable: /nonexistent/shell}`, *not compared before ansible-core 2.19: run_command puts the OS error in msg*
+- executable that does not exist: args `{cmd: "echo hi", executable: /nonexistent/shell}`
 - argv is quoted for the shell: args `{argv: [echo, "a b", "$HOME", "it's"]}`
 - raw params: args `{_raw_params: "echo raw | tr a-z A-Z"}`
 
@@ -855,9 +1268,9 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 #### Argument validation
 
 - expand_argument_vars is not a shell option: args `{cmd: "echo hi", expand_argument_vars: true}`
-- cmd and argv are mutually exclusive: args `{cmd: "echo a", argv: [echo, b]}`, *not compared before ansible-core 2.19: it fails with rc 256 and "only command or argv can be given, not both"*
-- one of cmd or argv is required: args `{chdir: /tmp}`, *not compared before ansible-core 2.19: it fails with rc 256 and "no command given"*
-- unsupported option: args `{cmd: "echo a", bogus: 1}`, *not compared before ansible-core 2.19: it has no cmd option, so the supported options listed differ*
+- cmd and argv are mutually exclusive: args `{cmd: "echo a", argv: [echo, b]}`
+- one of cmd or argv is required: args `{chdir: /tmp}`
+- unsupported option: args `{cmd: "echo a", bogus: 1}`
 
 #### Dedicated checks
 
@@ -880,10 +1293,10 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### armor
 
-- armor false on text: args `{src: "{{ slurp_dir }}/unicode.txt", armor: false}`, *not compared before ansible-core 2.21: it has no armor option*
-- armor false on binary: args `{src: "{{ slurp_dir }}/binary.bin", armor: false}`, *not compared before ansible-core 2.21: it has no armor option*
-- armor true: args `{src: "{{ slurp_dir }}/text.txt", armor: true}`, *not compared before ansible-core 2.21: it has no armor option*
-- armor as a string: args `{src: "{{ slurp_dir }}/text.txt", armor: "no"}`, *not compared before ansible-core 2.21: it has no armor option*
+- armor false on text: args `{src: "{{ slurp_dir }}/unicode.txt", armor: false}`
+- armor false on binary: args `{src: "{{ slurp_dir }}/binary.bin", armor: false}`
+- armor true: args `{src: "{{ slurp_dir }}/text.txt", armor: true}`
+- armor as a string: args `{src: "{{ slurp_dir }}/text.txt", armor: "no"}`
 
 #### Paths
 
@@ -891,21 +1304,21 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - path with a variable: args `{src: "$SLURP_DIR/text.txt"}`, environment `{SLURP_DIR: "{{ slurp_dir }}"}`
 - path with ~: args `{src: "~/{{ slurp_home_file }}"}`
 - symlink: args `{src: "{{ slurp_dir }}/link.txt"}`
-- relative path is not found in the home directory: args `{src: "relative.txt"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
+- relative path is not found in the home directory: args `{src: "relative.txt"}`
 
 #### Errors
 
-- missing file: args `{src: "{{ slurp_dir }}/missing.txt"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
-- directory: args `{src: "{{ slurp_dir }}"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
-- unreadable file: args `{src: "{{ slurp_dir }}/unreadable.txt"}`, *not compared before ansible-core 2.19: its messages start in lowercase*
-- symlink loop: args `{src: "{{ slurp_dir }}/loop"}`, *not compared before ansible-core 2.19: its message starts in lowercase and names the OS error instead of a literal {source}*
-- file under a regular file: args `{src: "{{ slurp_dir }}/text.txt/child"}`, *not compared before ansible-core 2.19: its message starts in lowercase and names the OS error instead of a literal {source}*
+- missing file: args `{src: "{{ slurp_dir }}/missing.txt"}`
+- directory: args `{src: "{{ slurp_dir }}"}`
+- unreadable file: args `{src: "{{ slurp_dir }}/unreadable.txt"}`
+- symlink loop: args `{src: "{{ slurp_dir }}/loop"}`
+- file under a regular file: args `{src: "{{ slurp_dir }}/text.txt/child"}`
 
 #### Modes and arguments
 
 - check mode: args `{src: "{{ slurp_dir }}/text.txt"}`, check mode
 - src is required: args `{}`
-- unsupported option: args `{src: "{{ slurp_dir }}/text.txt", bogus: 1}`, *not compared before ansible-core 2.21: it has no armor option, so the supported options listed differ*
+- unsupported option: args `{src: "{{ slurp_dir }}/text.txt", bogus: 1}`
 
 ### stat
 
@@ -940,7 +1353,7 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - no checksum: args `{path: "{{ stat_dir }}/file.txt", get_checksum: false}`
 - no mime: args `{path: "{{ stat_dir }}/file.txt", get_mime: false}`
 - no attributes: args `{path: "{{ stat_dir }}/file.txt", get_attributes: false}`
-- selinux context: args `{path: "{{ stat_dir }}/file.txt", get_selinux_context: true}`, *not compared before ansible-core 2.20: an older builtin has no get_selinux_context option*
+- selinux context: args `{path: "{{ stat_dir }}/file.txt", get_selinux_context: true}`
 - aliases: args `{dest: "{{ stat_dir }}/file.txt", checksum: sha256, mime: false, attr: false}`
 - name alias and checksum_algo: args `{name: "{{ stat_dir }}/file.txt", checksum_algo: md5, mime_type: false}`
 - path with a variable: args `{path: "$STAT_DIR/file.txt"}`, environment `{STAT_DIR: "{{ stat_dir }}"}`
@@ -951,7 +1364,80 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - check mode: args `{path: "{{ stat_dir }}/file.txt"}`, check mode
 - path is required: args `{follow: true}`
 - unknown checksum algorithm: args `{path: "{{ stat_dir }}/file.txt", checksum_algorithm: crc32}`
-- unsupported option: args `{path: "{{ stat_dir }}/file.txt", bogus: 1}`, *not compared before ansible-core 2.20: an older builtin has no get_selinux_context option*
+- unsupported option: args `{path: "{{ stat_dir }}/file.txt", bogus: 1}`
+
+### template
+
+50 side-by-side cases in `tests/integration/targets/template/vars/main.yml`.
+
+#### Rendering
+
+- template to a new file: args `{src: hello.j2, dest: "{{ dest }}/new.txt"}`
+- template unchanged: args `{src: hello.j2, dest: "{{ dest }}/same.txt"}`
+- template replacing a file: args `{src: hello.j2, dest: "{{ dest }}/old.txt"}`
+- template with a variable: args `{src: hello.j2, dest: "{{ dest }}/new.txt"}`, greeting `there`
+- template with an include: args `{src: include.j2, dest: "{{ dest }}/new.txt"}`
+- unicode template: args `{src: unicode.j2, dest: "{{ dest }}/new.txt"}`
+- template variables about the template: args `{src: magic.j2, dest: "{{ dest }}/new.txt"}`
+- template to a directory: args `{src: hello.j2, dest: "{{ dest }}/dir"}`
+- template to a directory with a trailing slash: args `{src: hello.j2, dest: "{{ dest }}/dir/"}`
+- template to a missing directory: args `{src: hello.j2, dest: "{{ dest }}/missing/new.txt"}`
+- template with an absolute path to the source: args `{src: "{{ role_path }}/templates/hello.j2", dest: "{{ dest }}/new.txt"}`
+
+#### Template options
+
+- trim_blocks off: args `{src: blocks.j2, dest: "{{ dest }}/new.txt", trim_blocks: false}`
+- lstrip_blocks on: args `{src: blocks.j2, dest: "{{ dest }}/new.txt", lstrip_blocks: true}`
+- custom delimiters
+- windows newline sequence: args `{src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "\r\n"}`
+- old mac newline sequence: args `{src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "\r"}`
+- invalid newline sequence: args `{src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "x"}`
+- latin-1 output encoding: args `{src: latin.j2, dest: "{{ dest }}/new.txt", output_encoding: latin-1}`
+- utf-16 output encoding: args `{src: latin.j2, dest: "{{ dest }}/new.txt", output_encoding: utf-16}`
+
+#### Copy options
+
+- mode: args `{src: hello.j2, dest: "{{ dest }}/new.txt", mode: "0600"}`
+- symbolic mode: args `{src: hello.j2, dest: "{{ dest }}/old.txt", mode: "u=rw,g=,o="}`
+- mode preserve: args `{src: script.sh.j2, dest: "{{ dest }}/new.txt", mode: preserve}`
+- only the mode changes: args `{src: same.j2, dest: "{{ dest }}/same.txt", mode: "0600"}`
+- invalid mode: args `{src: hello.j2, dest: "{{ dest }}/new.txt", mode: "abc"}`
+- backup: args `{src: hello.j2, dest: "{{ dest }}/old.txt", backup: true}`
+- backup when unchanged: args `{src: same.j2, dest: "{{ dest }}/same.txt", backup: true}`
+- force off keeps an existing file: args `{src: hello.j2, dest: "{{ dest }}/old.txt", force: false}`
+- force off writes a new file: args `{src: hello.j2, dest: "{{ dest }}/new.txt", force: false}`
+- follow a link: args `{src: hello.j2, dest: "{{ dest }}/link.txt", follow: true}`
+- replace a link: args `{src: hello.j2, dest: "{{ dest }}/link.txt"}`
+- owner: args `{src: hello.j2, dest: "{{ dest }}/new.txt", owner: "{{ current_user }}"}`
+- unknown owner: args `{src: hello.j2, dest: "{{ dest }}/new.txt", owner: no_such_user_xyz}`
+- group: args `{src: same.j2, dest: "{{ dest }}/same.txt", group: "{{ other_group }}"}`
+- unknown group: args `{src: hello.j2, dest: "{{ dest }}/new.txt", group: no_such_group_xyz}`
+- validate passes: args `{src: hello.j2, dest: "{{ dest }}/new.txt", validate: "grep -q hello %s"}`
+- validate fails: args `{src: hello.j2, dest: "{{ dest }}/new.txt", validate: "grep -q zzz %s"}`
+- validate without %s: args `{src: hello.j2, dest: "{{ dest }}/new.txt", validate: "true"}`
+- unsafe_writes is accepted: args `{src: hello.j2, dest: "{{ dest }}/old.txt", unsafe_writes: true}`
+- path with variables is expanded on the target: args `{src: hello.j2, dest: "$TPL_DEST/new.txt"}`, environment `{TPL_DEST: "{{ dest }}"}`
+
+#### Check and diff modes
+
+- check mode with a new file: args `{src: hello.j2, dest: "{{ dest }}/new.txt"}`, check mode
+- check mode with a change: args `{src: hello.j2, dest: "{{ dest }}/old.txt"}`, check mode
+- check mode without a change: args `{src: same.j2, dest: "{{ dest }}/same.txt"}`, check mode
+- diff mode off: args `{src: hello.j2, dest: "{{ dest }}/old.txt"}`, diff mode off
+
+#### Errors
+
+- missing source template: args `{src: no-such.j2, dest: "{{ dest }}/new.txt"}`
+- undefined variable: args `{src: undefined.j2, dest: "{{ dest }}/new.txt"}`
+- template syntax error: args `{src: syntax.j2, dest: "{{ dest }}/new.txt"}`
+- src is required: args `{dest: "{{ dest }}/new.txt"}`
+- dest is required: args `{src: hello.j2}`
+- unsupported option: args `{src: hello.j2, dest: "{{ dest }}/new.txt", bogus: true}`
+- dest is a file in a file: args `{src: hello.j2, dest: "{{ dest }}/old.txt/new.txt"}`
+
+#### Dedicated checks
+
+- `tasks/no_python.yml`: The template is written by compiled modules only: with no Python interpreter on the target the task still works, and the builtin fails.
 
 ### uri
 
@@ -983,11 +1469,11 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - form-urlencoded with a short pair: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: [[a]]}`
 - form-urlencoded with a long pair: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-urlencoded, body: [[a, b, c]]}`, *not compared before Python (on the target) 3.14: Python before 3.14 says "too many values to unpack (expected 2)"*
 - multipart fields
-- multipart file from the controller: *not compared before ansible-core 2.19: it has no multipart_encoding and always uses base64*
+- multipart file from the controller
 - multipart file on the target
 - multipart value of the wrong type: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {n: 5}}`
 - multipart part without filename or content: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {p: {mime_type: text/plain}}}`
-- multipart with an unknown encoding: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {f: {filename: upload.txt, multipart_encoding: base32}}}`, *not compared before ansible-core 2.19: it has no multipart_encoding and ignores it*
+- multipart with an unknown encoding: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {f: {filename: upload.txt, multipart_encoding: base32}}}`
 - multipart body that is not a mapping: args `{url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: "a=b"}`
 - src from the controller: args `{url: "{{ http_url }}/echo", method: PUT, src: upload.txt}`
 - src on the target: args `{url: "{{ http_url }}/echo", method: PUT, src: "{{ uri_dir }}/remote.txt", remote_src: true}`
@@ -998,10 +1484,10 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 - custom headers: args `{url: "{{ http_url }}/echo", headers: {X-Custom-Header: value, x-lower: lower, X-Number: 42, X-Bool: true}}`
 - http_agent: args `{url: "{{ http_url }}/echo", http_agent: my-agent/1.0}`
-- force sends cache-control: args `{url: "{{ http_url }}/echo", force: true}`, *not compared before ansible-core 2.17: it does not pass force on, so no cache-control header is sent*
+- force sends cache-control: args `{url: "{{ http_url }}/echo", force: true}`
 - repeated response headers: args `{url: "{{ http_url }}/dup-headers"}`
 - response without a Content-Length: args `{url: "{{ http_url }}/no-length", return_content: true}`
-- relative Location on a 201: args `{url: "{{ http_url }}/location?to=created/1", status_code: [201]}`, *not compared before ansible-core 2.18: it resolves Location by appending it to the URL*
+- relative Location on a 201: args `{url: "{{ http_url }}/location?to=created/1", status_code: [201]}`
 
 #### Status codes
 
@@ -1038,8 +1524,8 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - all keeps a 307 POST: args `{url: "{{ http_url }}/redirect/307", method: POST, body: data, follow_redirects: all}`
 - all keeps a 308 PUT: args `{url: "{{ http_url }}/redirect/308", method: PUT, body: data, follow_redirects: all}`
 - none: args `{url: "{{ http_url }}/redirect/302", follow_redirects: none}`
-- "no is deprecated": args `{url: "{{ http_url }}/redirect/302", follow_redirects: "no"}`, *not compared before ansible-core 2.18: it does not deprecate yes and no*
-- "yes is deprecated": args `{url: "{{ http_url }}/redirect/302", follow_redirects: "yes"}`, *not compared before ansible-core 2.18: it does not deprecate yes and no*
+- "no is deprecated": args `{url: "{{ http_url }}/redirect/302", follow_redirects: "no"}`
+- "yes is deprecated": args `{url: "{{ http_url }}/redirect/302", follow_redirects: "yes"}`
 - urllib2 turns a POST into a GET: args `{url: "{{ http_url }}/redirect/302", method: POST, body: data, follow_redirects: urllib2}`
 - urllib2 does not redirect a 307 POST: args `{url: "{{ http_url }}/redirect/307", method: POST, body: data, follow_redirects: urllib2}`
 - relative redirect: args `{url: "{{ http_url }}/redirect/302?to=../echo%3Fr=1"}`
@@ -1111,10 +1597,10 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 
 #### Modes and arguments
 
-- check mode is not supported: args `{url: "{{ http_url }}/echo"}`, check mode, *not compared before ansible-core 2.17: the module, not the action, reports the missing check mode support*
+- check mode is not supported: args `{url: "{{ http_url }}/echo"}`, check mode
 - unsupported option: args `{url: "{{ http_url }}/echo", bogus: 1}`
 - invalid body_format: args `{url: "{{ http_url }}/echo", body_format: xml}`
-- url is required: args `{method: GET}`, *not compared before ansible-core 2.19: it fails with an internal error instead of validating url*
+- url is required: args `{method: GET}`
 - status_code must be integers: args `{url: "{{ http_url }}/echo", status_code: [abc]}`
 
 #### Dedicated checks
@@ -1122,6 +1608,73 @@ To add a case, add an entry to the target's `vars/main.yml` and run
 - `tasks/async.yml`: Async works like the builtin: fire and forget followed by async_status. (Ansible's async wrapper needs Python on the target.)
 - `tasks/unsupported.yml`: Features of the builtin with no Go equivalent fail with a message naming them: GSSAPI/Kerberos authentication (use_gssapi, which needs the Python gssapi library) and OpenSSL cipher keywords and operators (HIGH, !aNULL). Only the compiled module runs.
 
+### wait_for_connection
+
+6 side-by-side cases in `tests/integration/targets/wait_for_connection/vars/main.yml`.
+
+#### Cases
+
+- defaults: args `{}`
+- all options: args `{connect_timeout: 3, delay: 1, sleep: 2, timeout: 10}`
+- options as strings: args `{connect_timeout: "3", timeout: "10"}`
+- check mode is skipped: args `{}`, check mode
+- unsupported option: args `{bogus: true}`
+- invalid integer: args `{timeout: abc}`
+
+#### Dedicated checks
+
+- `tasks/no_python.yml`: The connection is tested with the compiled ping: with no Python interpreter on the target the task returns at once, and the builtin times out.
+
+### apk
+
+compiled.builtin.apk has no builtin to compare with, so the cases check what apk did, in Alpine containers without Python: Alpine 3.22 has apk-tools 2, later releases apk-tools 3.
+
+19 steps in `tests/integration/targets/apk/tasks/cases.yml`:
+
+- tar starts out absent
+- Install in check mode
+- Install
+- Install again
+- installed and a list of names
+- latest when it is already the latest
+- A version constraint already met
+- Remove in check mode
+- Remove
+- Remove again, with removed
+- latest installs what's missing, from comma-separated names
+- Remove both
+- A package that doesn't exist
+- A package that doesn't exist in check mode
+- No names
+- Another package manager
+- use apk
+- An invalid state
+- state is required
+
+### microdnf
+
+compiled.builtin.microdnf has no builtin to compare with, so the cases check what microdnf did, in containers without Python: classic microdnf on UBI 9 and 10, and dnf5 on Fedora minimal.
+
+16 steps in `tests/integration/targets/microdnf/tasks/cases.yml`:
+
+- tar and diffutils start out absent
+- Install in check mode
+- Install
+- Install again
+- Install again in check mode
+- latest when it is already the latest
+- Remove in check mode
+- Remove
+- Remove again, with removed and a package that doesn't exist
+- latest installs what's missing, from comma-separated names
+- Remove both
+- A package that doesn't exist
+- A package that doesn't exist in check mode
+- No names
+- Another package manager
+- An invalid state
+
 ### Helper targets
 
 - `setup_http_server`: Starts files/testserver.py on the target: plain HTTP (also an HTTP proxy), HTTPS, HTTPS requiring a client certificate, and a unix socket, on free ports. Sets http_url, https_url, mtls_url, closed_url, http_socket and http_server_dir. Stop it with: kill $(cat {{ http_server_dir }}/server.pid)
+- `setup_podman`: Containers for the modules that need a particular distribution. A target that depends on this role can add_host containers with ansible_connection: cgm_podman (connection_plugins/ here), and stop them with tasks/stop.yml.
