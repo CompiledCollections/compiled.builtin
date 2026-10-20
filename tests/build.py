@@ -184,13 +184,18 @@ behind must also be identical: content, mode, owner, group, link count,
 times, symlinks and backups (times the run sets to now, and access times of
 symlinks, which move whenever they're read, aren't compared). Cases marked
 *fails only* just check that both fail, because the error text comes from
-Python's or Go's own libraries. Cases marked *not compared before
-ansible-core X* (or *Python X* on the target) still run there, but older
-builtins, or the urllib and ssl of older Pythons they rely on, behave
-differently; the compiled modules always behave like the current builtin.
+Python's or Go's own libraries. Cases marked *not compared before Python
+X* (on the target) still run there, but the builtin, or the urllib and ssl
+it relies on, behaves differently on older Pythons; the compiled modules
+always behave like the builtin on current Python. Only the current
+ansible-core (2.21) is tested.
 
-To add a case, add an entry to the target's `vars/main.yml` and run
-`python3 tests/build.py testdocs`.
+apk and microdnf have no builtin to compare with: their targets run the
+module in containers of the distributions it is for (with podman, through
+the test-only connection in `setup_podman`) and check what it did.
+
+To add a case, add an entry to the target's `vars/main.yml` (or a step to
+`tasks/cases.yml`) and run `python3 tests/build.py testdocs`.
 """
 
 CASE_LABELS = {
@@ -219,10 +224,9 @@ def case_line(name, keys):
             parts.append('no path given')
         elif key == 'symlink':
             parts.append(CASE_LABELS[key])
-        elif key in ('builtin_differs', 'python_differs'):
+        elif key == 'python_differs':
             m = re.match(r"""\{before: "([^"]+)", why: '(.*)'\}$""", value)
-            what = 'ansible-core' if key == 'builtin_differs' else 'Python (on the target)'
-            parts.append('*not compared before %s %s: %s*' % (what, m.group(1), m.group(2).replace("''", "'"))
+            parts.append('*not compared before Python (on the target) %s: %s*' % (m.group(1), m.group(2).replace("''", "'"))
                          if m else '%s %s' % (key, code(value)))
         else:
             parts.append('%s %s' % (CASE_LABELS.get(key, key), code(value)))

@@ -58,12 +58,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Only the current ansible-core is tested.
         include: &versions
-          - {ansible: '2.16', python: '3.12'}
-          - {ansible: '2.17', python: '3.12'}
-          - {ansible: '2.18', python: '3.12'}
-          - {ansible: '2.19', python: '3.12'}
-          - {ansible: '2.20', python: '3.12'}
           - {ansible: '2.21', python: '3.14'}
     defaults:
       run:

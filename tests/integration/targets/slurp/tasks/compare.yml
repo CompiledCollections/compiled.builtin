@@ -15,7 +15,6 @@
   ignore_errors: true
 
 - name: "{{ case.name }} | results match"
-  when: case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
   vars:
     volatile: [ansible_facts, invocation, exception, module_stderr]
     want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('compiled.builtin.', 'MODULE.') }}"
