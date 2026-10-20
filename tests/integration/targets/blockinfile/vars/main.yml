@@ -14,10 +14,6 @@ managed: "# BEGIN ANSIBLE MANAGED BLOCK\nold\n# END ANSIBLE MANAGED BLOCK\n"
 # behind. Diff mode is on unless `diff: false`. `compare: failed` only
 # compares whether the task failed, for errors whose wording comes from
 # Python's or Go's own libraries.
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 blockinfile_cases:
   # Inserting blocks
   - name: insert a block at the end
@@ -53,11 +49,9 @@ blockinfile_cases:
   - name: vertical tab and form feed split lines
     content: "a\x0bb\x0cc\n"
     args: {block: x, insertafter: '^a'}
-    builtin_differs: {before: "2.20", why: 'it splits bytes, only at \n and \r'}
   - name: unicode line separator splits lines
     content: "a b\n"
     args: {block: x, insertbefore: '^b'}
-    builtin_differs: {before: "2.20", why: 'it splits bytes, only at \n and \r'}
 
   # Markers
   - name: markers in reverse order
@@ -155,7 +149,6 @@ blockinfile_cases:
   - name: insertafter regexp is unicode-aware
     content: "näme=1\nother\n"
     args: {block: x, insertafter: '^\w+=1'}
-    builtin_differs: {before: "2.20", why: 'it matches bytes, where \w is ASCII-only'}
   - name: insertafter case-insensitive
     content: "a\nKEY\nb\n"
     args: {block: x, insertafter: '(?i)^key'}
@@ -276,7 +269,6 @@ blockinfile_cases:
   - name: unsupported option
     content: "a\n"
     args: {block: b, bogus: true}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option, so the supported options listed differ'}
   - name: path is required
     args: {block: b}
     no_path: true
@@ -373,29 +365,23 @@ blockinfile_cases:
   - name: latin-1 file
     content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
     args: {block: "thé", encoding: latin-1}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: utf-16 file
     content_b64: "{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"
     args: {block: three, encoding: utf-16}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: utf-8 with a BOM
     content_b64: "{{ '﻿one\n' | b64encode }}"
     args: {block: two}
   - name: invalid utf-8
     content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
     args: {block: x}
-    builtin_differs: {before: "2.20", why: 'it works on bytes, so any content is accepted'}
   - name: unencodable block
     content: "a\n"
     args: {block: "é", encoding: ascii}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: unknown encoding
     content: "a\n"
     args: {block: b, encoding: no-such-codec}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: unknown encoding creating a file
     args: {block: b, encoding: no-such-codec, create: true}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
 
   # validate
   - name: validate passes

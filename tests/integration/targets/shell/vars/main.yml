@@ -3,11 +3,6 @@ shell_dir: "{{ output_dir }}/shell"
 # Each case runs ansible.builtin.shell and compiled.builtin.shell with the
 # same arguments (and check_mode/environment); the results must match, apart
 # from timing values.
-#
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 shell_cases:
   # Shell features
   - name: pipe
@@ -34,7 +29,6 @@ shell_cases:
         echo first
         false
         echo never
-    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
   - name: heredoc
     args:
       cmd: |
@@ -54,13 +48,10 @@ shell_cases:
   # Output and return codes
   - name: non-zero exit
     args: {cmd: "echo failing; exit 3"}
-    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
   - name: killed by a signal
     args: {cmd: "kill -TERM $$"}
-    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
   - name: command not found
     args: {cmd: "nonexistent_command_xyz"}
-    builtin_differs: {before: "2.21", why: 'its msg is "non-zero return code"'}
   - name: trailing newlines are stripped
     args: {cmd: "printf 'a\\n\\n'"}
   - name: strip_empty_ends false
@@ -79,7 +70,6 @@ shell_cases:
     args: {cmd: "pwd", chdir: "{{ shell_dir }}"}
   - name: chdir that does not exist
     args: {cmd: "pwd", chdir: "{{ shell_dir }}/missing"}
-    builtin_differs: {before: "2.19", why: 'its msg includes the OS error'}
   - name: creates exists
     args: {cmd: "echo ran", creates: "{{ shell_dir }}/exists.txt"}
   - name: creates missing
@@ -90,7 +80,6 @@ shell_cases:
     args: {cmd: "arr=(a b c); [[ ${arr[1]} == b ]] && echo bash", executable: /bin/bash}
   - name: executable that does not exist
     args: {cmd: "echo hi", executable: /nonexistent/shell}
-    builtin_differs: {before: "2.19", why: 'run_command puts the OS error in msg'}
   - name: argv is quoted for the shell
     args: {argv: [echo, "a b", "$HOME", "it's"]}
   - name: raw params
@@ -109,10 +98,7 @@ shell_cases:
     args: {cmd: "echo hi", expand_argument_vars: true}
   - name: cmd and argv are mutually exclusive
     args: {cmd: "echo a", argv: [echo, b]}
-    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "only command or argv can be given, not both"'}
   - name: one of cmd or argv is required
     args: {chdir: /tmp}
-    builtin_differs: {before: "2.19", why: 'it fails with rc 256 and "no command given"'}
   - name: unsupported option
     args: {cmd: "echo a", bogus: 1}
-    builtin_differs: {before: "2.19", why: 'it has no cmd option, so the supported options listed differ'}

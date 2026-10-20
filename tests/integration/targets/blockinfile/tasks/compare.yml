@@ -33,7 +33,6 @@
     compiled_files: "{{ captured.stdout }}"
 
 - name: "{{ case.name }} | results and files match"
-  when: case.builtin_differs is not defined or ansible_version.full is version(case.builtin_differs.before, '>=')
   vars:
     # Python lists valid booleans from a set, in an order that changes per process.
     set_order: 'Valid booleans include: [^"]*'
