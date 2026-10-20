@@ -1,3 +1,5 @@
+plugins/modules/blockinfile.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/blockinfile.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/command.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/command.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/copy.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module

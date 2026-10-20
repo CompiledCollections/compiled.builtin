@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -71,6 +72,15 @@ type golden struct {
 		Out string `json:"out"`
 		Err string `json:"err"`
 	} `json:"percent"`
+	SplitLines []struct {
+		In  string   `json:"in"`
+		Out []string `json:"out"`
+	} `json:"splitlines"`
+	Multiline []struct {
+		Re        string `json:"re"`
+		Multiline bool   `json:"multiline"`
+		Err       string `json:"err"`
+	} `json:"multiline"`
 }
 
 func loadGolden(t *testing.T) golden {
@@ -266,6 +276,29 @@ func TestPercentFormat(t *testing.T) {
 			t.Errorf("PercentFormat(%q) error = %v, want %q", c.In, err, c.Err)
 		case c.Err == "" && (err != nil || got != c.Out):
 			t.Errorf("PercentFormat(%q) = %q, %v, want %q", c.In, got, err, c.Out)
+		}
+	}
+}
+
+func TestSplitLines(t *testing.T) {
+	for _, c := range loadGolden(t).SplitLines {
+		got := SplitLines(c.In)
+		if len(got) == 0 && len(c.Out) == 0 {
+			continue
+		}
+		if !reflect.DeepEqual(got, c.Out) {
+			t.Errorf("SplitLines(%q) = %q, Python %q", c.In, got, c.Out)
+		}
+	}
+}
+
+func TestPythonGlobalFlags(t *testing.T) {
+	for _, c := range loadGolden(t).Multiline {
+		if c.Err != "" {
+			continue // Python rejects global flags after the start
+		}
+		if got := strings.ContainsRune(PythonGlobalFlags(c.Re), 'm'); got != c.Multiline {
+			t.Errorf("PythonGlobalFlags(%q) multiline = %v, Python %v", c.Re, got, c.Multiline)
 		}
 	}
 }

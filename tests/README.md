@@ -9,6 +9,7 @@ each layer needs.
 - [Unit tests](#unit-tests)
 - [Sanity tests](#sanity-tests)
 - [Integration tests](#integration-tests)
+  - [blockinfile](#blockinfile)
   - [command](#command)
   - [copy](#copy)
   - [file](#file)
@@ -26,14 +27,14 @@ rely on. Most compare against results recorded from CPython, and for uri from
 ansible-core's own uri code, in `testdata/python.json` files (each made by the
 `generate.py` next to it; re-record them with `python3 tests/build.py golden`).
 
-- `internal/ansible/compat_test.go`: `TestShlexSplit`, `TestShlexQuote`, `TestExpandVars`, `TestPyTime`, `TestCompilePython`, `TestCompilePythonUnsupported`, `TestExpandPython`, `TestFnmatch`, `TestSurrogateEscaped`, `TestStrptime`, `TestPyFloat`, `TestPercentFormat`
+- `internal/ansible/compat_test.go`: `TestShlexSplit`, `TestShlexQuote`, `TestExpandVars`, `TestPyTime`, `TestCompilePython`, `TestCompilePythonUnsupported`, `TestExpandPython`, `TestFnmatch`, `TestSurrogateEscaped`, `TestStrptime`, `TestPyFloat`, `TestPercentFormat`, `TestSplitLines`, `TestPythonGlobalFlags`
 - `internal/files/fileattr_test.go`: `TestSymbolicModeToOctal`, `TestParsePythonOctal`
 - `internal/files/walk_test.go`: `TestPyPath`
 - `modules_src/uri/uri_test.go`: `TestPyJSONDumps`, `TestFormURLEncoded`, `TestPrepareMultipart`, `TestMaskURL`, `TestParseContentType`, `TestResponseFilename`, `TestURLJoin`, `TestRedirectQuote`, `TestNetrc`, `TestBypassProxy`
 
 Results recorded from CPython (and, for uri, ansible-core), by kind:
 
-- `internal/ansible/testdata/python.json`: shlex (19), quote (8), expandvars (17), expanduser (7), timedelta (9), datetime (3), regex (39), expand (12), fnmatch (19), strptime (16), pyfloat (11), percent (7)
+- `internal/ansible/testdata/python.json`: shlex (19), quote (8), expandvars (17), expanduser (7), timedelta (9), datetime (3), regex (39), expand (12), fnmatch (19), strptime (16), pyfloat (11), percent (7), splitlines (11), multiline (8)
 - `modules_src/uri/testdata/python.json`: json (6), form (8), multipart (8), mask_url (6), content_type (8), disposition (6), urljoin (7), redirect_quote (4), netrc (3)
 
 ## Sanity tests
@@ -62,6 +63,178 @@ differently; the compiled modules always behave like the current builtin.
 
 To add a case, add an entry to the target's `vars/main.yml` and run
 `python3 tests/build.py testdocs`.
+
+### blockinfile
+
+122 side-by-side cases in `tests/integration/targets/blockinfile/vars/main.yml`.
+
+#### Inserting blocks
+
+- insert a block at the end: file `"one\ntwo\n"`, args `{block: "a\nb"}`
+- block already present: file `"one\n{{ managed }}"`, args `{block: old}`
+- replace an existing block: file `"one\n{{ managed }}two\n"`, args `{block: "new\nlines\n"}`
+- block with a trailing newline: file `"one\n"`, args `{block: "a\n"}`
+- file without a trailing newline: file `"one\ntwo"`, args `{block: a}`
+- empty file: file `""`, args `{block: a}`
+- unicode block: file `"uno\n"`, args `{block: "dös ✓\nüber"}`
+- block containing carriage returns: file `"one\n"`, args `{block: "a\r\nb\rc"}`
+- windows line endings are kept: file `"one\r\ntwo\r\n"`, args `{block: a}`
+- windows line endings around a block: file `"one\r\n# BEGIN ANSIBLE MANAGED BLOCK\r\nold\r\n# END ANSIBLE MANAGED BLOCK\r\n"`, args `{block: new}`
+- vertical tab and form feed split lines: file `"a\x0bb\x0cc\n"`, args `{block: x, insertafter: '^a'}`, *not compared before ansible-core 2.20: it splits bytes, only at \n and \r*
+- unicode line separator splits lines: file `"a b\n"`, args `{block: x, insertbefore: '^b'}`, *not compared before ansible-core 2.20: it splits bytes, only at \n and \r*
+
+#### Markers
+
+- markers in reverse order: file `"one\n# END ANSIBLE MANAGED BLOCK\nmid\n# BEGIN ANSIBLE MANAGED BLOCK\ntwo\n"`, args `{block: new}`
+- only the begin marker: file `"one\n# BEGIN ANSIBLE MANAGED BLOCK\nold\n"`, args `{block: new}`
+- only the end marker: file `"one\nold\n# END ANSIBLE MANAGED BLOCK\n"`, args `{block: new}`
+- marker with surrounding spaces is a different line: file `"one\n  # BEGIN ANSIBLE MANAGED BLOCK\nold\n# END ANSIBLE MANAGED BLOCK\n"`, args `{block: new}`
+- markers repeated, the last ones win: file `"{{ managed }}mid\n{{ managed }}"`, args `{block: new}`
+- custom marker: file `"<html>\n<body>\n</body>\n"`, args `{block: "<h1>hi</h1>", marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"}`
+- custom marker_begin and marker_end: file `"one\n"`, args `{block: a, marker_begin: START, marker_end: STOP}`
+- marker with mark twice: file `"one\n"`, args `{block: a, marker: "# {mark} block {mark}"}`
+- marker without mark: file `"one\n"`, args `{block: a, marker: "# managed"}`
+- marker without mark already present: file `"one\n# managed\na\n# managed\n"`, args `{block: a, marker: "# managed"}`
+- marker_begin with escapes: file `"one\n"`, args `{block: a, marker_begin: 'BEGIN\tTAB\\'}`
+- marker_begin with an octal escape: file `"one\n"`, args `{block: a, marker_begin: 'X\0Y'}`
+- marker_begin with a bad escape: file `"one\n"`, args `{block: a, marker_begin: 'BEGIN\q'}`
+- marker_begin with a group reference: file `"one\n"`, args `{block: a, marker_begin: 'BEGIN\1'}`
+- marker_end with a bad escape even without mark: file `"one\n"`, args `{block: a, marker: "# managed", marker_end: 'END\q'}`
+- unicode markers: file `"uno\n"`, args `{block: a, marker: "# {mark} bloque ✓", marker_begin: INICIO, marker_end: FIN}`
+
+#### insertafter and insertbefore
+
+- insertafter the last match: file `"a\nkey=1\nb\nkey=2\nc\n"`, args `{block: x, insertafter: '^key='}`
+- insertafter without a match goes to the end: file `"a\nb\n"`, args `{block: x, insertafter: '^nomatch'}`
+- insertafter EOF: file `"a\nb\n"`, args `{block: x, insertafter: EOF}`
+- insertafter BOF is a regular expression: file `"a\nBOF\nb\n"`, args `{block: x, insertafter: BOF}`
+- insertafter an empty string: file `"a\nb\n"`, args `{block: x, insertafter: ''}`
+- insertafter the last line without a newline: file `"a\nb"`, args `{block: x, insertafter: '^b'}`
+- insertbefore the last match: file `"a\nkey=1\nb\nkey=2\nc\n"`, args `{block: x, insertbefore: '^key='}`
+- insertbefore BOF: file `"a\nb\n"`, args `{block: x, insertbefore: BOF}`
+- insertbefore without a match goes to the end: file `"a\nb\n"`, args `{block: x, insertbefore: '^nomatch'}`
+- insertbefore EOF is a regular expression: file `"a\nEOF\nb\n"`, args `{block: x, insertbefore: EOF}`
+- insertbefore an empty string: file `"a\nb\n"`, args `{block: x, insertbefore: ''}`
+- insertbefore the first line: file `"a\nb\n"`, args `{block: x, insertbefore: '^a'}`
+- insertafter ignored when the block exists: file `"a\n{{ managed }}b\n"`, args `{block: new, insertafter: '^b'}`
+- insertafter regexp dollar matches before the newline: file `"a=1\nb=2\n"`, args `{block: x, insertafter: '^a=\d$'}`
+- insertafter regexp is unicode-aware: file `"näme=1\nother\n"`, args `{block: x, insertafter: '^\w+=1'}`, *not compared before ansible-core 2.20: it matches bytes, where \w is ASCII-only*
+- insertafter case-insensitive: file `"a\nKEY\nb\n"`, args `{block: x, insertafter: '(?i)^key'}`
+- insertafter with the multiline flag: file `"LISTENER =\n  (SID_LIST =\n    (x)\n  )\n"`, args `{block: x, insertafter: '(?m)LISTENER =\n.*\(SID_LIST ='}`
+- insertbefore with the multiline flag: file `"a\nstart\nend\nb\n"`, args `{block: x, insertbefore: '(?m)^start\nend$'}`
+- multiline flag without a match goes to the end: file `"a\nb\n"`, args `{block: x, insertafter: '(?m)^z\nz'}`
+- multiline flag with dollar: file `"a\nb\nc\n"`, args `{block: x, insertafter: '(?m)^b$'}`
+- multiline match ending in a newline: file `"a\nb\nc\n"`, args `{block: x, insertafter: '(?m)^a\n'}`
+- multiline match past the last line: file `"a\n"`, args `{block: x, insertafter: '(?m)a\n'}`
+- multiline insertafter on a missing file: args `{block: x, insertafter: '(?m)^a', create: true}`
+- multiline insertbefore with an empty match: file `"a\nb\n"`, args `{block: x, insertbefore: '(?m)^$'}`
+- multiline insertafter counts only newlines: file `"a\rb\nc\n"`, args `{block: x, insertafter: '(?m)c'}`
+- scoped multiline flag matches line by line: file `"a\nb\n"`, args `{block: x, insertafter: '(?m:^a$)'}`
+- invalid insertafter regexp: file `"a\n"`, args `{block: x, insertafter: '('}`, *fails only*
+- insertbefore and insertafter are mutually exclusive: file `"a\n"`, args `{block: x, insertbefore: a, insertafter: a}`
+
+#### Blank lines around the block
+
+- prepend_newline in the middle: file `"a\nb\n"`, args `{block: x, insertafter: '^a', prepend_newline: true}`
+- prepend_newline at the start: file `"a\nb\n"`, args `{block: x, insertbefore: BOF, prepend_newline: true}`
+- prepend_newline after a blank line: file `"a\n\nb\n"`, args `{block: x, insertbefore: '^b', prepend_newline: true}`
+- append_newline in the middle: file `"a\nb\n"`, args `{block: x, insertafter: '^a', append_newline: true}`
+- append_newline at the end: file `"a\nb\n"`, args `{block: x, append_newline: true}`
+- append_newline before a blank line: file `"a\n\nb\n"`, args `{block: x, insertafter: '^a', append_newline: true}`
+- append and prepend newlines: file `"a\nb\n"`, args `{block: x, insertafter: '^a', append_newline: true, prepend_newline: true}`
+- append and prepend newlines on an existing block: file `"a\n{{ managed }}b\n"`, args `{block: new, append_newline: true, prepend_newline: true}`
+- newlines are not added when removing: file `"a\n{{ managed }}b\n"`, args `{state: absent, append_newline: true, prepend_newline: true}`
+- prepend_newline with windows line endings: file `"a\r\nb\r\n"`, args `{block: x, insertafter: '^a', prepend_newline: true}`
+
+#### Removing blocks
+
+- absent removes the block: file `"a\n{{ managed }}b\n"`, args `{state: absent}`
+- absent with nothing to remove: file `"a\nb\n"`, args `{state: absent}`
+- absent on a missing file: args `{state: absent}`
+- empty block removes the block: file `"a\n{{ managed }}b\n"`, args `{block: ""}`
+- missing block removes the block: file `"a\n{{ managed }}b\n"`, args `{}`
+- absent with backup: file `"a\n{{ managed }}"`, args `{state: absent, backup: true}`
+
+#### create
+
+- create a missing file: args `{block: a, create: true}`
+- missing file without create: args `{block: a}`
+- create in a missing directory: args `{path: "{{ bif_dir }}/new/dir/file.txt", block: a, create: true}`
+- create with an empty block: args `{block: "", create: true}`
+- create in check mode: args `{block: a, create: true}`, check mode
+- create in a missing directory in check mode: args `{path: "{{ bif_dir }}/new/dir/file.txt", block: a, create: true}`, check mode
+- create with insertbefore BOF: args `{block: a, create: true, insertbefore: BOF}`
+- create with mode: args `{block: a, create: true, mode: "0600"}`
+
+#### Argument and state errors
+
+- path is a directory: args `{path: "{{ bif_dir }}", block: a}`
+- invalid state: file `"a\n"`, args `{block: b, state: maybe}`
+- unsupported option: file `"a\n"`, args `{block: b, bogus: true}`, *not compared before ansible-core 2.20: it has no encoding option, so the supported options listed differ*
+- path is required: args `{block: b}`, no path given
+
+#### Aliases
+
+- dest alias: file `"a\n"`, args `{dest: "{{ bif_file }}", block: b}`
+- name alias: file `"a\n"`, args `{name: "{{ bif_file }}", block: b}`
+- destfile alias: file `"a\n"`, args `{destfile: "{{ bif_file }}", block: b}`
+- content alias: file `"a\n"`, args `{content: b}`
+- path with variables is expanded on the target: file `"a\n"`, args `{path: "$BIF_DIR/file.txt", block: b}`, environment `{BIF_DIR: "{{ bif_dir }}"}`
+
+#### Backups
+
+- backup when changed: file `"a\n"`, args `{block: b, backup: true}`
+- no backup when unchanged: file `"a\n{{ managed }}"`, args `{block: old, backup: true}`
+- no backup when created: args `{block: b, backup: true, create: true}`
+
+#### Check and diff modes
+
+- check mode with a change: file `"a\n"`, args `{block: b}`, check mode
+- check mode without a change: file `"a\n{{ managed }}"`, args `{block: old}`, check mode
+- check mode removing a block: file `"a\n{{ managed }}"`, args `{state: absent}`, check mode
+- diff mode off: file `"a\n"`, args `{block: b}`, diff mode off
+- diff of an empty file: file `""`, args `{block: b}`
+
+#### File attributes
+
+- mode as an octal string: file `"a\n"`, args `{block: b, mode: "0600"}`
+- mode as an integer: file `"a\n"`, args `{block: b, mode: 0600}`
+- symbolic mode: file `"a\n"`, args `{block: b, mode: "u+x,g-r,o="}`
+- only the mode changes: file `"a\n{{ managed }}"`, args `{block: old, mode: "0600"}`
+- mode already right: file `"a\n{{ managed }}"`, args `{block: old, mode: "0644"}`
+- invalid mode: file `"a\n"`, args `{block: b, mode: "abc"}`
+- existing permissions are kept on rewrite: file `"a\n"`, args `{block: b}`, file mode `"0640"`
+- owner by name: file `"a\n"`, args `{block: b, owner: "{{ current_user }}"}`
+- unknown owner: file `"a\n"`, args `{block: b, owner: no_such_user_xyz}`
+- group: file `"a\n{{ managed }}"`, args `{block: old, group: "{{ other_group }}"}`
+- unknown group: file `"a\n"`, args `{block: b, group: no_such_group_xyz}`
+- unsafe_writes is accepted: file `"a\n"`, args `{block: b, unsafe_writes: true}`
+
+#### Encodings
+
+- latin-1 file: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: "thé", encoding: latin-1}`, *not compared before ansible-core 2.20: it has no encoding option*
+- utf-16 file: file bytes `"{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"`, args `{block: three, encoding: utf-16}`, *not compared before ansible-core 2.20: it has no encoding option*
+- utf-8 with a BOM: file bytes `"{{ '﻿one\n' | b64encode }}"`, args `{block: two}`
+- invalid utf-8: file bytes `"{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"`, args `{block: x}`, *not compared before ansible-core 2.20: it works on bytes, so any content is accepted*
+- unencodable block: file `"a\n"`, args `{block: "é", encoding: ascii}`, *not compared before ansible-core 2.20: it has no encoding option*
+- unknown encoding: file `"a\n"`, args `{block: b, encoding: no-such-codec}`, *not compared before ansible-core 2.20: it has no encoding option*
+- unknown encoding creating a file: args `{block: b, encoding: no-such-codec, create: true}`, *not compared before ansible-core 2.20: it has no encoding option*
+
+#### validate
+
+- validate passes: file `"a\n"`, args `{block: b, validate: "grep -q b %s"}`
+- validate fails: file `"a\n"`, args `{block: b, validate: "grep -q zzz %s"}`
+- validate without %s: file `"a\n"`, args `{block: b, validate: "true"}`
+- validate not run without a change: file `"a\n{{ managed }}"`, args `{block: old, validate: "false %s"}`
+
+#### Symlinks
+
+- a symlink's target is updated: file `"a\n"`, args `{path: "{{ bif_dir }}/link.txt", block: b}`, through a symlink
+- a symlink's target with backup: file `"a\n"`, args `{path: "{{ bif_dir }}/link.txt", block: b, backup: true}`, through a symlink
+
+#### Dedicated checks
+
+- `tasks/unsupported_regexp.yml`: Python regexp features in insertafter with no RE2 equivalent (lookahead, lookbehind, backreferences, verbose mode) make the compiled module fail with a message naming the feature and RE2, instead of matching differently, and leave the file untouched. Only the compiled module runs: the builtin supports them.
 
 ### command
 

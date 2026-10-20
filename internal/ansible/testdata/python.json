@@ -904,5 +904,119 @@
    "in": "trail %",
    "err": "incomplete format"
   }
+ ],
+ "splitlines": [
+  {
+   "in": "a\nb",
+   "out": [
+    "a\n",
+    "b"
+   ]
+  },
+  {
+   "in": "a\r\nb\r",
+   "out": [
+    "a\r\n",
+    "b\r"
+   ]
+  },
+  {
+   "in": "a\rb\n\n",
+   "out": [
+    "a\r",
+    "b\n",
+    "\n"
+   ]
+  },
+  {
+   "in": "",
+   "out": []
+  },
+  {
+   "in": "\n",
+   "out": [
+    "\n"
+   ]
+  },
+  {
+   "in": "a\u000bb\fc\u001cd\u001de\u001efg h i",
+   "out": [
+    "a\u000b",
+    "b\f",
+    "c\u001c",
+    "d\u001d",
+    "e\u001e",
+    "f",
+    "g ",
+    "h ",
+    "i"
+   ]
+  },
+  {
+   "in": "no newline",
+   "out": [
+    "no newline"
+   ]
+  },
+  {
+   "in": "\r\n\r\n",
+   "out": [
+    "\r\n",
+    "\r\n"
+   ]
+  },
+  {
+   "in": "x\r",
+   "out": [
+    "x\r"
+   ]
+  },
+  {
+   "in": "\r\r\n",
+   "out": [
+    "\r",
+    "\r\n"
+   ]
+  },
+  {
+   "in": "é ",
+   "out": [
+    "é "
+   ]
+  }
+ ],
+ "multiline": [
+  {
+   "re": "(?m)a",
+   "multiline": true
+  },
+  {
+   "re": "(?mi)a",
+   "multiline": true
+  },
+  {
+   "re": "(?i)(?m)a",
+   "multiline": true
+  },
+  {
+   "re": "(?m:a)",
+   "multiline": false
+  },
+  {
+   "re": "(?s)x",
+   "multiline": false
+  },
+  {
+   "re": "plain",
+   "multiline": false
+  },
+  {
+   "re": "(?ms)x",
+   "multiline": true
+  },
+  {
+   "re": "(?i:a)(?m)",
+   "err": "global flags not at the start of the expression at position 6"
+  }
  ]
 }

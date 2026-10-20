@@ -47,3 +47,12 @@ func pythonStrerror(errno syscall.Errno) string {
 	}
 	return strings.ToUpper(s[:1]) + s[1:]
 }
+
+// Strerror is the strerror Python shows for err's errno (OSError.strerror),
+// or err's own text when it carries no errno.
+func Strerror(err error) string {
+	if errno := Errno(err); errno != 0 {
+		return pythonStrerror(errno)
+	}
+	return err.Error()
+}

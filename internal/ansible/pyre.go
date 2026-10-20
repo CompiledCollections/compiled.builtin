@@ -37,12 +37,19 @@ func CompilePython(pat string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-func translatePython(pat string) (string, error) {
-	p := []rune(pat)
-	i := 0
+// PythonGlobalFlags returns the inline flags a Python pattern sets for the
+// whole pattern, such as "m" for (?m): the letters of re.MULTILINE and
+// friends that would show in the compiled pattern's flags.
+func PythonGlobalFlags(pat string) string {
+	flags, _ := globalFlags([]rune(pat))
+	return flags
+}
 
-	// Global inline flags must come first in Python 3.11+.
+// globalFlags reads the global inline flags at the start of p, which must
+// come first in Python 3.11+, and returns them and where the pattern goes on.
+func globalFlags(p []rune) (string, int) {
 	var flags string
+	i := 0
 	for i+2 < len(p) && p[i] == '(' && p[i+1] == '?' && strings.ContainsRune("aiLmsux", p[i+2]) {
 		j := i + 2
 		for j < len(p) && strings.ContainsRune("aiLmsux", p[j]) {
@@ -54,6 +61,12 @@ func translatePython(pat string) (string, error) {
 		flags += string(p[i+2 : j])
 		i = j + 1
 	}
+	return flags, i
+}
+
+func translatePython(pat string) (string, error) {
+	p := []rune(pat)
+	flags, i := globalFlags(p)
 	if strings.ContainsAny(flags, "x") {
 		return "", unsupported(pat, "verbose mode (?x)")
 	}
