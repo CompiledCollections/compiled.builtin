@@ -53,6 +53,12 @@ type Args struct {
 	ClientCert          *string         `json:"client_cert"`
 	ClientKey           *string         `json:"client_key"`
 	UseGSSAPI           bool            `json:"use_gssapi"`
+
+	// get_url's own options; GetURL is set when the binary runs as get_url.
+	GetURL   bool    `json:"_get_url"`
+	Backup   bool    `json:"backup"`
+	Checksum string  `json:"checksum"`
+	TmpDest  *string `json:"tmp_dest"`
 }
 
 func str(p *string) string {
@@ -88,6 +94,10 @@ var args Args
 
 func main() {
 	ansible.ReadArgs(&args)
+	if args.GetURL {
+		getURL()
+		return
+	}
 
 	rawURL := args.URL
 	bodyFormat := strings.ToLower(args.BodyFormat)

@@ -1,0 +1,7 @@
+- name: Start from an empty dest_dir
+  ansible.builtin.shell: |
+    chmod -R u+rwX "{{ gu_dir }}" 2>/dev/null; rm -rf "{{ dest_dir }}" "{{ gu_dir }}/tmp" && mkdir -p "{{ dest_dir }}/sub" "{{ gu_dir }}/tmp"
+    {{ case.setup | default('') }}
+  args:
+    executable: /bin/bash
+  changed_when: false

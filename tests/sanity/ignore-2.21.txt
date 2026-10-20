@@ -10,6 +10,8 @@ plugins/modules/file.meta validate-modules!skip  # makes the module name resolva
 plugins/modules/file.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/find.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/find.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/get_url.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/get_url.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/lineinfile.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/lineinfile.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/ping.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
