@@ -70,6 +70,8 @@ build_ignore:
   - .github
   - .claude
   - '*.tar.gz'
+  # Logos for the repository page; Galaxy doesn't show them from the tarball
+  - logos
 
 # A dict controlling use of manifest directives used in building the collection artifact. The key 'directives' is a
 # list of MANIFEST.in style
