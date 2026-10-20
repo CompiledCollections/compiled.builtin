@@ -1,0 +1,33 @@
+# The checksum and the content come from compiled modules only: with no
+# Python interpreter on the target the task still works, and the builtin
+# fails.
+- name: Files to fetch
+  ansible.builtin.shell: |
+    rm -rf "{{ fetch_dir }}" && mkdir -p "{{ fetch_dir }}/src" "{{ fetch_dir }}/dest"
+    printf 'hello\n' > "{{ fetch_dir }}/src/hello.txt"
+  changed_when: false
+
+- name: Fetch without Python
+  compiled.builtin.fetch:
+    src: "{{ fetch_dir }}/src/hello.txt"
+    dest: "{{ fetch_dir }}/dest/hello.txt"
+    flat: true
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+  register: no_python
+
+- name: The builtin needs Python
+  ansible.builtin.fetch:
+    src: "{{ fetch_dir }}/src/hello.txt"
+    dest: "{{ fetch_dir }}/dest/builtin.txt"
+    flat: true
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+  register: builtin_no_python
+  ignore_errors: true
+
+- ansible.builtin.assert:
+    that:
+      - no_python is changed
+      - lookup('ansible.builtin.file', fetch_dir ~ '/dest/hello.txt') == 'hello'
+      - builtin_no_python is failed

@@ -1,0 +1,59 @@
+fetch_dir: "{{ output_dir }}/fetch"
+src: "{{ fetch_dir }}/src"
+dest: "{{ fetch_dir }}/dest"
+
+# Each case makes the files in tasks/prepare.yml under src (plus any shell
+# `setup`), runs ansible.builtin.fetch and compiled.builtin.fetch with
+# `args`, and compares the results and the files fetched under dest.
+# `compare: failed` only compares whether the task failed.
+fetch_cases:
+  - name: fetch into a tree per host
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}"}
+  - name: fetch flat to a file
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}
+  - name: fetch flat into a directory
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}/", flat: true}
+  - name: fetch flat into a missing directory
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}/new/", flat: true}
+  - name: fetch unchanged
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}
+    setup: printf 'hello\n' > "{{ dest }}/copy.txt"
+  - name: fetch replacing a different file
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}/copy.txt", flat: true}
+    setup: printf 'old\n' > "{{ dest }}/copy.txt"
+  - name: fetch a binary file
+    args: {src: "{{ src }}/binary.bin", dest: "{{ dest }}", flat: false}
+  - name: fetch an empty file
+    args: {src: "{{ src }}/empty.txt", dest: "{{ dest }}/empty.txt", flat: true}
+  - name: fetch a unicode file name
+    args: {src: "{{ src }}/ünï ✓.txt", dest: "{{ dest }}"}
+  - name: fetch through a link
+    args: {src: "{{ src }}/link.txt", dest: "{{ dest }}/copy.txt", flat: true}
+  - name: fetch a broken link
+    args: {src: "{{ src }}/broken.txt", dest: "{{ dest }}"}
+  - name: fetch a missing file
+    args: {src: "{{ src }}/missing.txt", dest: "{{ dest }}"}
+  - name: fetch a missing file without fail_on_missing
+    args: {src: "{{ src }}/missing.txt", dest: "{{ dest }}", fail_on_missing: false}
+  - name: fetch a directory
+    args: {src: "{{ src }}/dir", dest: "{{ dest }}"}
+  - name: fetch a directory without fail_on_missing
+    args: {src: "{{ src }}/dir", dest: "{{ dest }}", fail_on_missing: false}
+  - name: fetch an unreadable file
+    args: {src: "{{ src }}/unreadable.txt", dest: "{{ dest }}"}
+  - name: fetch an unreadable file without fail_on_missing
+    args: {src: "{{ src }}/unreadable.txt", dest: "{{ dest }}", fail_on_missing: false}
+  - name: validate_checksum off
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}", validate_checksum: false}
+  - name: path with variables is expanded on the target
+    args: {src: "$FETCH_SRC/hello.txt", dest: "{{ dest }}"}
+    environment: {FETCH_SRC: "{{ src }}"}
+  - name: check mode
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}"}
+    check_mode: true
+  - name: src is required
+    args: {dest: "{{ dest }}"}
+  - name: dest is required
+    args: {src: "{{ src }}/hello.txt"}
+  - name: unsupported option
+    args: {src: "{{ src }}/hello.txt", dest: "{{ dest }}", bogus: true}

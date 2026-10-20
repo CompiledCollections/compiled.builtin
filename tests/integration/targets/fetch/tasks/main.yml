@@ -1,0 +1,12 @@
+- name: Compare compiled.builtin.fetch with ansible.builtin.fetch
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ fetch_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Runs without Python on the target
+  ansible.builtin.include_tasks: no_python.yml
+
+- name: Let the test framework remove the directory
+  ansible.builtin.shell: chmod -R u+rwX "{{ fetch_dir }}" 2>/dev/null || true
