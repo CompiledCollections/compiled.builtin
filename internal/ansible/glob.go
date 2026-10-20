@@ -197,3 +197,16 @@ func classQuote(r rune) string {
 	}
 	return string(r)
 }
+
+var fnmatchCache = map[string]*regexp.Regexp{}
+
+// Fnmatch is fnmatch.fnmatch on POSIX (where it is fnmatchcase): whether
+// name matches the shell pattern pat.
+func Fnmatch(name, pat string) bool {
+	re, ok := fnmatchCache[pat]
+	if !ok {
+		re = fnmatchRegexp(pat)
+		fnmatchCache[pat] = re
+	}
+	return re.MatchString(name)
+}

@@ -493,3 +493,6 @@ func SetAttributesIfDifferent(path string, attributes *string, changed bool, dif
 	}
 	return changed
 }
+
+// ParsePythonOctal parses s the way Python's int(s, 8) does.
+func ParsePythonOctal(s string) (int64, bool) { return parsePythonOctal(s) }

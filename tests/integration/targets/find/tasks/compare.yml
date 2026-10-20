@@ -1,0 +1,39 @@
+# find changes nothing, so both modules look at the same tree.
+- name: "{{ case.name }} | prepare"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | ansible.builtin.find"
+  ansible.builtin.find:
+  args: "{{ {'paths': tree} | combine(case.args) if case.args.keys() | intersect(['paths', 'path', 'name']) | length == 0 else case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | compiled.builtin.find"
+  compiled.builtin.find:
+  args: "{{ {'paths': tree} | combine(case.args) if case.args.keys() | intersect(['paths', 'path', 'name']) | length == 0 else case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | results match"
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    # Reading a file to match its content can move its access time.
+    atime: '"atime": [0-9.e+]+'
+    volatile: "{{ ['ansible_facts', 'invocation', 'exception', 'module_stderr'] + case.volatile | default([]) }}"
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(atime, '\"atime\": X') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(atime, '\"atime\": X') }}"
+  ansible.builtin.assert:
+    # No inline if/else: ansible-core 2.17 can't parse it in a conditional.
+    that: >-
+      (case.compare | default('') == 'failed' and (builtin is failed) == (compiled is failed))
+      or (case.compare | default('') != 'failed' and want == got)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }}
+      compiled.builtin: {{ got }}
+    quiet: true

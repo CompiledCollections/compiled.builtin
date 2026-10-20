@@ -1,0 +1,12 @@
+- name: Compare compiled.builtin.find with ansible.builtin.find
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ find_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Regular expressions RE2 can't run fail clearly
+  ansible.builtin.include_tasks: unsupported_regexp.yml
+
+- name: Let the test framework remove the directory
+  ansible.builtin.shell: chmod -R u+rwX "{{ find_dir }}" 2>/dev/null || true
