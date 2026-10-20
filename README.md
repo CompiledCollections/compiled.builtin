@@ -11,6 +11,7 @@ static binaries, so they run on targets without Python. See [WHY.md](WHY.md).
 | `compiled.builtin.command` | `ansible.builtin.command` |
 | `compiled.builtin.shell` | `ansible.builtin.shell` |
 | `compiled.builtin.lineinfile` | `ansible.builtin.lineinfile` |
+| `compiled.builtin.blockinfile` | `ansible.builtin.blockinfile` |
 | `compiled.builtin.uri` | `ansible.builtin.uri` |
 | `compiled.builtin.slurp` | `ansible.builtin.slurp` |
 | `compiled.builtin.stat` | `ansible.builtin.stat` |
@@ -44,13 +45,14 @@ system and architecture. The action plugin maps the target's `uname -s` and
 
 ### Differences from the builtins
 
-- **lineinfile regular expressions** use Python syntax but run on Go's RE2
-  engine. Unicode `\d`, `\w`, `\s`, `$`, `\Z`, escapes, flags and named groups
+- **Regular expressions** (lineinfile's `regexp`, `insertafter` and
+  `insertbefore`, blockinfile's `insertafter` and `insertbefore`) use Python
+  syntax but run on Go's RE2 engine. Unicode `\d`, `\w`, `\s`, `$`, `\Z`, escapes, flags and named groups
   behave as in Python. Lookahead and lookbehind, backreferences inside the
   pattern (`\1`, `(?P=name)`), conditional and atomic groups and verbose
   mode `(?x)` aren't available: the task fails and names the feature.
   `\b` and `\B` only see ASCII word characters.
-- **lineinfile encodings**: UTF-8 (with or without a BOM), ASCII, Latin-1,
+- **lineinfile and blockinfile encodings**: UTF-8 (with or without a BOM), ASCII, Latin-1,
   Windows-1252, UTF-16 and UTF-32. Python's other codecs fail as unknown.
 - **SELinux** contexts are handled through extended attributes, so they
   work without Python's selinux bindings. `_default` contexts need
@@ -106,6 +108,10 @@ are differences too:
   `\w`, `\d` and `\s` match ASCII only. compiled.builtin.lineinfile reads
   text (UTF-8 by default), normalizes line endings and matches Unicode, as
   the builtin does from 2.20.
+- **blockinfile, before 2.20:** the builtin works on bytes: it has no
+  `encoding` option, splits lines only at `\n` and `\r` (not at `\v`, `\f`
+  or Unicode line separators), and its `insertafter`/`insertbefore` `\w`,
+  `\d` and `\s` match ASCII only.
 
 - **stat, before 2.21:** the builtin doesn't return `disk_usage_bytes`.
 - **stat, before 2.20:** the builtin has no `get_selinux_context` option.
@@ -137,7 +143,7 @@ internal/ansible/            Shared plumbing: read args, write results, plus Go
                              run_command)
 internal/files/              File metadata: mode, owner, attributes, SELinux,
                              atomic writes, backups and os.walk (lineinfile,
-                             uri, stat, file and copy)
+                             blockinfile, uri, stat, file and copy)
 internal/codecs/             Text encodings by Python codec name
 plugins/modules/
   <module>_linux_amd64       Precompiled binary (the only platform shipped)
@@ -230,7 +236,7 @@ come in three layers:
 - **Integration** (`ansible-test integration`): each case in
   `tests/integration/targets/<module>/vars/main.yml` runs
   `ansible.builtin.<module>` and `compiled.builtin.<module>` with the same
-  arguments and asserts identical results; for lineinfile, file and copy
-  also identical files (content, mode, owner, times, symlinks, backups)
+  arguments and asserts identical results; for lineinfile, blockinfile, file
+  and copy also identical files (content, mode, owner, times, symlinks, backups)
   afterwards. To cover a new
   option or edge case, add a case there and run `testdocs`.

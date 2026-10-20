@@ -1,0 +1,13 @@
+# Every file left in the directory: type, permissions, owner, group and
+# content, with backup names normalized.
+- name: List the files
+  ansible.builtin.shell: |
+    cd "{{ bif_dir }}" || exit 0
+    find . -mindepth 1 | sort | while read -r f; do
+      if [ -L "$f" ]; then echo "$f link $(readlink "$f")"
+      elif [ -d "$f" ]; then echo "$f dir $(stat -c '%a %U %G' "$f")"
+      else echo "$f file $(stat -c '%a %U %G' "$f") $(base64 -w0 < "$f")"
+      fi
+    done | sed -E 's/\.[0-9]+\.[0-9]{4}-[0-9]{2}-[0-9]{2}@[0-9:]{8}~/.BACKUP~/'
+  register: captured
+  changed_when: false

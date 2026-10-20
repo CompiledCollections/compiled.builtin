@@ -70,6 +70,11 @@ STRPTIME = [
     ("2021-13-01", "%Y-%m-%d"), ("2021-02-30", "%Y-%m-%d"),
 ]
 FLOATS = [0.0, 1.0, -2.5, 1609459200.0, 1791348442.9856722, 1e-05, 0.0001, 1e16, 1.5e16, 123456789012345.6, 0.1 + 0.2]
+SPLITLINES = [
+    "a\nb", "a\r\nb\r", "a\rb\n\n", "", "\n", "a\x0bb\x0cc\x1cd\x1de\x1ef\x85g\u2028h\u2029i", "no newline",
+    "\r\n\r\n", "x\r", "\r\r\n", "é\u2028",
+]
+MULTILINE = ["(?m)a", "(?mi)a", "(?i)(?m)a", "(?m:a)", "(?s)x", "plain", "(?ms)x", "(?i:a)(?m)"]
 PERCENT = ["check %s", "%s", "a %% b %s", "no arg", "%s %s", "%d", "trail %"]
 
 
@@ -92,6 +97,13 @@ def shlex_case(s):
         return {"in": s, "out": shlex.split(s)}
     except ValueError as e:
         return {"in": s, "err": str(e)}
+
+
+def multiline_case(pattern):
+    try:
+        return {"re": pattern, "multiline": bool(re.compile(pattern).flags & re.MULTILINE)}
+    except re.error as e:
+        return {"re": pattern, "err": str(e)}
 
 
 def regex_case(pattern, s):
@@ -124,4 +136,6 @@ print(json.dumps({
     "strptime": [strptime_case(v, f) for v, f in STRPTIME],
     "pyfloat": [{"in": f, "out": repr(f)} for f in FLOATS],
     "percent": [percent_case(f) for f in PERCENT],
+    "splitlines": [{"in": s, "out": s.splitlines(True)} for s in SPLITLINES],
+    "multiline": [multiline_case(p) for p in MULTILINE],
 }, ensure_ascii=False, indent=1))
