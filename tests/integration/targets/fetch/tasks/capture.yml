@@ -1,0 +1,10 @@
+# Every file left under dest: type, permissions and content.
+- name: List the files
+  ansible.builtin.shell:
+    cmd: |
+      cd "{{ fetch_dir }}/dest" || exit 0
+      find . -mindepth 1 -printf '%p %y %m\n' | LC_ALL=C sort
+      find . -mindepth 1 -type f | LC_ALL=C sort | while read -r f; do echo "$f $(base64 -w0 < "$f")"; done
+    executable: /bin/bash
+  register: captured
+  changed_when: false

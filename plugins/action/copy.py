@@ -16,7 +16,7 @@ from ansible.plugins.action.copy import ActionModule as BuiltinCopy
 from ansible_collections.compiled.builtin.plugins.action.file import ActionModule as FileAction
 from ansible_collections.compiled.builtin.plugins.action.slurp import ActionModule as SlurpAction
 from ansible_collections.compiled.builtin.plugins.action.stat import ActionModule as StatAction
-from ansible_collections.compiled.builtin.plugins.plugin_utils._go_module import FILE_COMMON_ARGUMENTS, CompiledModules
+from ansible_collections.compiled.builtin.plugins.plugin_utils._go_module import FILE_COMMON_ARGUMENTS, SwapsModules
 
 COPY_ARGUMENT_SPEC = dict(
     src=dict(type='str'),
@@ -34,27 +34,12 @@ COPY_ARGUMENT_SPEC = dict(
     **FILE_COMMON_ARGUMENTS
 )
 
-# The modules the builtin action runs, and the compiled module run instead.
-COMPILED = {
-    'ansible.legacy.copy': ('copy', COPY_ARGUMENT_SPEC),
-    'ansible.legacy.file': ('file', FileAction.argument_spec),
-    'ansible.legacy.stat': ('stat', StatAction.argument_spec),
-    'ansible.legacy.slurp': ('slurp', SlurpAction.argument_spec),
-}
 
-
-class ActionModule(BuiltinCopy, CompiledModules):
-
-    def run(self, tmp=None, task_vars=None):
-        result = super(ActionModule, self).run(tmp, task_vars)
-        return self._add_platform_fact(result)
-
-    def _execute_module(self, module_name=None, module_args=None, task_vars=None, **kwargs):
-        if module_name not in COMPILED:
-            return super(ActionModule, self)._execute_module(
-                module_name=module_name, module_args=module_args, task_vars=task_vars, **kwargs)
-        module, argument_spec = COMPILED[module_name]
-        if module_args is None:
-            module_args = self._task.args.copy()
-        return self._execute_compiled(module, module_args, task_vars or {}, argument_spec,
-                                      name='compiled.builtin.%s' % module, **kwargs)
+class ActionModule(SwapsModules, BuiltinCopy):
+    # The modules the builtin action runs, and the compiled module run instead.
+    compiled = {
+        'ansible.legacy.copy': ('copy', COPY_ARGUMENT_SPEC),
+        'ansible.legacy.file': ('file', FileAction.argument_spec),
+        'ansible.legacy.stat': ('stat', StatAction.argument_spec),
+        'ansible.legacy.slurp': ('slurp', SlurpAction.argument_spec),
+    }

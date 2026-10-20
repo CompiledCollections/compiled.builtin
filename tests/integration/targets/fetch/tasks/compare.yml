@@ -1,0 +1,47 @@
+- name: "{{ case.name }} | prepare for ansible.builtin.fetch"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | ansible.builtin.fetch"
+  ansible.builtin.fetch:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after ansible.builtin.fetch"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    builtin_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | prepare for compiled.builtin.fetch"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | compiled.builtin.fetch"
+  compiled.builtin.fetch:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after compiled.builtin.fetch"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    compiled_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | results and files match"
+  vars:
+    volatile: [ansible_facts, invocation, exception, module_stderr]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('compiled.builtin.', 'MODULE.') }}"
+  ansible.builtin.assert:
+    # No inline if/else: ansible-core 2.17 can't parse it in a conditional.
+    that: >-
+      (case.compare | default('') == 'failed' and (builtin is failed) == (compiled is failed))
+      or (case.compare | default('') != 'failed' and want == got and builtin_files == compiled_files)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }} {{ builtin_files }}
+      compiled.builtin: {{ got }} {{ compiled_files }}
+    quiet: true

@@ -1,0 +1,15 @@
+# The same starting tree on the target for every run, with fixed times so
+# runs compare equal.
+- name: Make the starting tree
+  ansible.builtin.shell:
+    cmd: |
+      chmod -R u+rwX "{{ tpl_dir }}" 2>/dev/null; rm -rf "{{ tpl_dir }}"
+      mkdir -p "{{ tpl_dir }}/dest" && cd "{{ tpl_dir }}" || exit 1
+      printf 'hello world\n' > dest/same.txt
+      printf 'old\n' > dest/old.txt
+      mkdir -p dest/dir
+      ln -s old.txt dest/link.txt
+      find . -exec touch -h -d @1577836800 {} +
+      {{ case.setup | default('') }}
+    executable: /bin/bash
+  changed_when: false
