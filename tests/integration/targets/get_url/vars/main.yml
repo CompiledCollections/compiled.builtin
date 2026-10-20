@@ -1,0 +1,229 @@
+gu_dir: "{{ output_dir }}/get_url"
+dest_dir: "{{ gu_dir }}/dest"
+tmp_dir: "{{ gu_dir }}/tmp"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+
+# sha256, sha1 and md5 of what /download/a.txt returns ("downloaded a.txt\n").
+a_sha256: d776e391a8bdb153c16e0ea1c73309d456cb592843e01b2b739fa45f761a8175
+a_sha1: b624b07329f4ddd2f3d21516cbbe281f97b48aea
+a_md5: 7525f0a02152260e92f836a50fef418d
+b_sha256: f3e6a9f57c89b93e09c96cb610f34d1327274ddb8914264350f9aab32c531265
+# A checksum file listing a.txt and b.txt, served by /content.
+sums_gnu: "{{ (b_sha256 ~ '  b.txt\n' ~ a_sha256 ~ ' *a.txt\n') | urlencode }}"
+sums_bsd: "{{ ('SHA256 (b.txt) = ' ~ b_sha256 ~ '\nSHA256 (a.txt) = ' ~ a_sha256 ~ '\n') | urlencode }}"
+
+# Each case starts from an empty dest_dir (plus any shell `setup`), runs
+# ansible.builtin.get_url and compiled.builtin.get_url with `args` against
+# the test server from setup_http_server, and compares the results and the
+# files left in dest_dir. The temporary download's name and the timing
+# aren't compared. `compare: failed` only compares whether the task failed.
+#
+# `python_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin behaves differently on targets with a Python older than VERSION;
+# the compiled module behaves like it does on current Python, so on those
+# targets the case runs but isn't compared.
+get_url_cases:
+  # Downloads
+  - name: download to a file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}
+  - name: download into a directory
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}"}
+  - name: download into a directory with a trailing slash
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/"}
+  - name: download named by Content-Disposition
+    args: {url: "{{ http_url }}/download/a.txt?cd=named.txt", dest: "{{ dest_dir }}"}
+  - name: Content-Disposition with a path keeps the basename
+    args: {url: "{{ http_url }}/download/a.txt?cd=../../etc/evil.txt", dest: "{{ dest_dir }}"}
+  - name: URL without a file name is index.html
+    args: {url: "{{ http_url }}/content/?body=x", dest: "{{ dest_dir }}"}
+  - name: URL with a query keeps the path's name
+    args: {url: "{{ http_url }}/content/page.html?body=x", dest: "{{ dest_dir }}"}
+  - name: download named after a redirect
+    args: {url: "{{ http_url }}/redirect/302?to=/download/b.txt", dest: "{{ dest_dir }}"}
+  - name: unchanged download
+    args: {url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true}
+    setup: printf 'same\n' > "{{ dest_dir }}/same.txt"
+  - name: replace a different file with force
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+  - name: existing file is not modified since
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+  - name: existing file without If-Modified-Since support
+    args: {url: "{{ http_url }}/content?body=new%0A", dest: "{{ dest_dir }}/a.txt"}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+  - name: response without a length
+    args: {url: "{{ http_url }}/no-length", dest: "{{ dest_dir }}/n.txt"}
+  - name: empty response
+    args: {url: "{{ http_url }}/content", dest: "{{ dest_dir }}/empty.txt"}
+  - name: binary response
+    args: {url: "{{ http_url }}/content?b64=AAEC%2F%2F8%3D", dest: "{{ dest_dir }}/bin"}
+  - name: gzip response decompressed
+    args: {url: "{{ http_url }}/gzip", dest: "{{ dest_dir }}/g.json"}
+  - name: gzip response kept
+    args: {url: "{{ http_url }}/gzip", dest: "{{ dest_dir }}/g.json.gz", decompress: false}
+  - name: dest with variables is expanded on the target
+    args: {url: "{{ http_url }}/download/a.txt", dest: "$GU_DEST/a.txt"}
+    environment: {GU_DEST: "{{ dest_dir }}"}
+
+  # Checksums
+  - name: matching sha256 checksum
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}
+  - name: matching sha1 checksum in upper case
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha1:{{ a_sha1 | upper }}"}
+  - name: matching md5 checksum
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "md5:{{ a_md5 }}"}
+  - name: checksum with a zero-width space
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:​{{ a_sha256 }}"}
+  - name: mismatched checksum
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ b_sha256 }}"}
+  - name: checksum already matching the file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}
+    setup: printf 'downloaded a.txt\n' > "{{ dest_dir }}/a.txt"
+  - name: checksum already matching, mode changes
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}", mode: "0600"}
+    setup: printf 'downloaded a.txt\n' > "{{ dest_dir }}/a.txt"
+  - name: checksum not matching the file forces the download
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ a_sha256 }}"}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+  - name: checksum without an algorithm
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "{{ a_sha256 }}"}
+  - name: checksum that is not hexadecimal
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:xyz"}
+  - name: empty checksum after the algorithm
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:"}
+  - name: unknown checksum algorithm
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha3:{{ a_sha256 }}"}
+    # Python lists its algorithms from a set, in an order that changes per process.
+    compare: failed
+  - name: unknown checksum algorithm with an existing file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha3:{{ a_sha256 }}"}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+    # Python lists its algorithms from a set, in an order that changes per process.
+    compare: failed
+  - name: checksum from a GNU checksum file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_gnu }}"}
+  - name: checksum from a BSD checksum file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_bsd }}"}
+  - name: checksum file with a single checksum
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/content?body={{ a_sha256 }}"}
+  - name: checksum file without the file
+    args: {url: "{{ http_url }}/download/c.txt", dest: "{{ dest_dir }}/c.txt", checksum: "sha256:{{ http_url }}/content?body={{ sums_gnu }}"}
+  - name: checksum file that can't be downloaded
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", checksum: "sha256:{{ http_url }}/status/404"}
+
+  # Errors
+  - name: not found
+    args: {url: "{{ http_url }}/status/404", dest: "{{ dest_dir }}/x"}
+  - name: server error with a reason
+    args: {url: "{{ http_url }}/status/500?reason=Broken", dest: "{{ dest_dir }}/x"}
+  - name: connection refused
+    args: {url: "{{ closed_url }}/x", dest: "{{ dest_dir }}/x"}
+  - name: missing destination directory
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/missing/a.txt"}
+  - name: unwritable destination directory
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/sub/a.txt"}
+    setup: chmod 0555 "{{ dest_dir }}/sub"
+  - name: unwritable destination file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt" && chmod 0444 "{{ dest_dir }}/a.txt"
+  - name: invalid URL
+    args: {url: "not a url", dest: "{{ dest_dir }}/x"}
+  - name: URL without a host
+    args: {url: "http:///x", dest: "{{ dest_dir }}/x"}
+  - name: url is required
+    args: {dest: "{{ dest_dir }}/x"}
+  - name: dest is required
+    args: {url: "{{ http_url }}/download/a.txt"}
+  - name: unsupported option
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/x", bogus: true}
+  - name: timeout
+    args: {url: "{{ http_url }}/delay/3", dest: "{{ dest_dir }}/x", timeout: 1}
+
+  # tmp_dest
+  - name: tmp_dest
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ tmp_dir }}"}
+  - name: missing tmp_dest
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ gu_dir }}/nope"}
+  - name: tmp_dest is a file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", tmp_dest: "{{ dest_dir }}/f"}
+    setup: touch "{{ dest_dir }}/f"
+
+  # Requests
+  - name: headers and agent
+    args: {url: "{{ http_url }}/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Test: one, Accept: text/plain}, http_agent: tester/1.0}
+  - name: basic auth after a challenge
+    args: {url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", url_username: u, url_password: s3cr3t}
+  - name: forced basic auth with aliases
+    args: {url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", username: u, password: s3cr3t, force_basic_auth: true}
+  - name: wrong password
+    args: {url: "{{ http_url }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json", url_username: u, url_password: wrong}
+  - name: credentials in the URL are masked
+    args: {url: "http://u:s3cr3t@127.0.0.1:{{ http_url.split(':')[-1] }}/basic-auth/u/s3cr3t", dest: "{{ dest_dir }}/e.json"}
+  - name: redirect keeps headers by default
+    args: {url: "{{ http_url }}/redirect/301?to=/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Keep: yes}}
+  - name: unredirected headers
+    args: {url: "{{ http_url }}/redirect/302?to=/echo", dest: "{{ dest_dir }}/e.json", headers: {X-Drop: yes}, unredirected_headers: [x-drop]}
+  - name: redirect loop
+    args: {url: "{{ http_url }}/redirect-loop", dest: "{{ dest_dir }}/x"}
+  - name: through a proxy
+    args: {url: "http://example.invalid/echo", dest: "{{ dest_dir }}/e.json"}
+    environment: {http_proxy: "{{ http_url }}"}
+  - name: use_proxy off
+    args: {url: "{{ http_url }}/echo", dest: "{{ dest_dir }}/e.json", use_proxy: false}
+    environment: {http_proxy: "http://127.0.0.1:1"}
+  - name: https without validation
+    args: {url: "{{ https_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", validate_certs: false}
+  - name: https with an unknown CA
+    args: {url: "{{ https_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}
+  - name: client certificate
+    args:
+      url: "{{ mtls_url }}/download/a.txt"
+      dest: "{{ dest_dir }}/a.txt"
+      validate_certs: false
+      client_cert: "{{ http_server_dir }}/client.pem"
+      client_key: "{{ http_server_dir }}/client.key"
+  - name: netrc credentials
+    args: {url: "{{ http_url }}/basic-auth/nuser/npass", dest: "{{ dest_dir }}/e.json"}
+    setup: printf 'machine 127.0.0.1 login nuser password npass\n' > "{{ gu_dir }}/netrc" && chmod 0600 "{{ gu_dir }}/netrc"
+    environment: {NETRC: "{{ gu_dir }}/netrc"}
+  - name: netrc ignored
+    args: {url: "{{ http_url }}/basic-auth/nuser/npass", dest: "{{ dest_dir }}/e.json", use_netrc: false}
+    setup: printf 'machine 127.0.0.1 login nuser password npass\n' > "{{ gu_dir }}/netrc" && chmod 0600 "{{ gu_dir }}/netrc"
+    environment: {NETRC: "{{ gu_dir }}/netrc"}
+
+  # File options
+  - name: backup
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", force: true, backup: true}
+    setup: printf 'old\n' > "{{ dest_dir }}/a.txt"
+  - name: no backup when unchanged
+    args: {url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true, backup: true}
+    setup: printf 'same\n' > "{{ dest_dir }}/same.txt"
+  - name: mode
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", mode: "0600"}
+  - name: symbolic mode
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", mode: "u=rw,g=,o="}
+  - name: mode on an unchanged file
+    args: {url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true, mode: "0640"}
+    setup: printf 'same\n' > "{{ dest_dir }}/same.txt"
+  - name: owner
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", owner: "{{ current_user }}"}
+  - name: unknown owner
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", owner: no_such_user_xyz}
+  - name: unsafe_writes is accepted
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt", unsafe_writes: true}
+
+  # Check mode
+  - name: check mode with a new file
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}/a.txt"}
+    check_mode: true
+  - name: check mode with an existing file
+    args: {url: "{{ http_url }}/content?body=same%0A", dest: "{{ dest_dir }}/same.txt", force: true}
+    setup: printf 'same\n' > "{{ dest_dir }}/same.txt"
+    check_mode: true
+  - name: check mode into a directory
+    args: {url: "{{ http_url }}/download/a.txt", dest: "{{ dest_dir }}"}
+    check_mode: true
+  - name: check mode with a failing URL
+    args: {url: "{{ http_url }}/status/404", dest: "{{ dest_dir }}/x"}
+    check_mode: true

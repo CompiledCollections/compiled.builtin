@@ -355,6 +355,9 @@ class GoModuleAction(CompiledModules, ActionBase):
 
     # The binary to run, when not the one named after the action (shell runs command).
     module_binary = None
+    # Internal arguments for that binary, added after validation so they don't
+    # show in validation errors (get_url runs uri with _get_url).
+    binary_args = None
     # The module named in validation errors, when not this action.
     validation_name = None
 
@@ -392,7 +395,7 @@ class GoModuleAction(CompiledModules, ActionBase):
         wrap_async = self._task.async_val and not self._connection.has_native_async
         module_result = self._execute_module(
             module_name=binary,
-            module_args=module_args,
+            module_args=dict(module_args, **self.binary_args) if self.binary_args else module_args,
             task_vars=task_vars,
             wrap_async=wrap_async,
         )
