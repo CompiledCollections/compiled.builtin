@@ -300,11 +300,25 @@ def unit_section():
     return '\n'.join(['- ' + line for line in lines] + ['', 'Results recorded from CPython (and, for uri, ansible-core), by kind:', ''] + recorded)
 
 
+def leading_comment(path):
+    """The comment lines a file starts with, joined."""
+    comment = []
+    with open(path) as f:
+        for line in f:
+            if not line.startswith('#'):
+                break
+            comment.append(line[1:].strip())
+    return ' '.join(comment)
+
+
 def render_testdocs():
     root = os.path.join(HERE, 'integration', 'targets')
     targets = sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, 'vars', 'main.yml')))
     helpers = sorted(d for d in os.listdir(root) if d.startswith('setup_'))
-    toc = '\n'.join('  - [%s](#%s)' % (t, t) for t in targets)
+    # Targets for modules with no builtin to compare with: tasks/cases.yml
+    # runs the module and checks what it did.
+    checked = sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, 'tasks', 'cases.yml')))
+    toc = '\n'.join('  - [%s](#%s)' % (t, t) for t in sorted(targets + checked))
     out = [TESTDOCS_INTRO.format(targets=toc, unit=unit_section())]
     for target in targets:
         sections = target_cases(target)
@@ -315,6 +329,12 @@ def render_testdocs():
         checks = dedicated_checks(target)
         if checks:
             out.append('#### Dedicated checks\n\n%s\n' % '\n'.join(checks))
+    for target in checked:
+        with open(os.path.join(root, target, 'tasks', 'cases.yml')) as f:
+            steps = [m.group(1) for m in re.finditer(r'^- name: (.*)$', f.read(), re.M)]
+        out.append('### %s\n\n%s\n\n%d steps in `tests/integration/targets/%s/tasks/cases.yml`:\n' % (
+            target, leading_comment(os.path.join(root, target, 'tasks', 'main.yml')), len(steps), target))
+        out.append('\n'.join('- %s' % step for step in steps) + '\n')
     if helpers:
         out.append('### Helper targets\n')
         for helper in helpers:

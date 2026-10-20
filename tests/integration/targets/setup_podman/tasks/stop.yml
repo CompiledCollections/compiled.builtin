@@ -1,0 +1,4 @@
+- name: "Stop {{ container }}"
+  ansible.builtin.command: podman rm -f {{ container }}
+  changed_when: true
+  ignore_errors: true

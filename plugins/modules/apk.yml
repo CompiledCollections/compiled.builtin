@@ -1,0 +1,102 @@
+DOCUMENTATION:
+  module: apk
+  short_description: Manage packages with apk
+  description:
+    - Installs, upgrades and removes packages on Alpine Linux with C(apk), without Python on the target.
+    - It takes the options of M(ansible.builtin.package), which can't manage packages on Alpine targets without Python
+      (it hands them to C(community.general.apk), a Python module).
+    - Works with apk-tools 2 (Alpine 3.22 and older) and apk-tools 3 (Alpine 3.23 and later).
+  version_added: 1.0.0
+  options:
+    name:
+      description:
+        - Package names, with an optional version constraint as C(apk add) takes them (V(curl), V(curl=8.22.0-r0), V(curl>8)).
+        - A comma-separated string is split into names, as for M(ansible.builtin.package).
+      type: list
+      elements: str
+      required: true
+    state:
+      description:
+        - V(present) (or V(installed)) installs the packages if they aren't installed.
+        - V(latest) installs them, or upgrades them to the newest version available (C(apk add --upgrade)).
+        - V(absent) (or V(removed)) removes them (C(apk del)), along with the dependencies nothing else needs.
+          Packages that aren't installed are left out.
+      type: str
+      required: true
+      choices: [present, installed, latest, absent, removed]
+    use:
+      description:
+        - The package manager to use. Only V(auto) and V(apk) are accepted, for compatibility with M(ansible.builtin.package).
+      type: str
+      default: auto
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+  attributes:
+    check_mode:
+      description: Can run in check_mode and return changed status prediction without modifying target.
+      details: Runs C(apk --simulate --no-cache), which downloads the repository indexes without writing them.
+      support: full
+    diff_mode:
+      description: Will return details on what has changed (or possibly needs changing in check_mode), when in diff mode.
+      support: none
+    platform:
+      description: Target OS/families that can be operated against.
+      platforms: posix
+  notes:
+    - Changing packages needs root, so use O(ignore:become) unless you connect as root.
+    - The repository indexes are updated as C(apk add) does by default; there is no C(update_cache) option.
+  seealso:
+    - module: ansible.builtin.package
+    - module: compiled.builtin.microdnf
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Install curl and git
+    compiled.builtin.apk:
+      name: [curl, git]
+      state: present
+    become: true
+
+  - name: Keep openssl up to date
+    compiled.builtin.apk:
+      name: openssl
+      state: latest
+    become: true
+
+  - name: Remove tar
+    compiled.builtin.apk:
+      name: tar
+      state: absent
+    become: true
+
+RETURN:
+  msg:
+    description: V(Nothing to do) when nothing changed; in check mode with changes, that none were made.
+    returned: always
+    type: str
+    sample: Nothing to do
+  results:
+    description: What apk did, or would do in check mode, to each package, dependencies included.
+    returned: always
+    type: list
+    elements: str
+    sample: ["Installed: acl-libs (2.3.2-r1)", "Installed: tar (1.35-r5)"]
+  rc:
+    description: The exit code of apk.
+    returned: always
+    type: int
+    sample: 0
+  stdout:
+    description: The output of apk when it failed.
+    returned: failure
+    type: str
+  stderr:
+    description: The error output of apk when it failed.
+    returned: failure
+    type: str
+  cmd:
+    description: The apk command that failed.
+    returned: failure
+    type: list
+    elements: str
