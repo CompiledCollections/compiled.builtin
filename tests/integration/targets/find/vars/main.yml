@@ -1,0 +1,219 @@
+find_dir: "{{ output_dir }}/find"
+tree: "{{ find_dir }}/tree"
+
+# Each case makes the tree in tasks/prepare.yml (plus any shell `setup`),
+# runs ansible.builtin.find and compiled.builtin.find on it with `args`
+# (paths defaults to the tree), and compares the results. Access times
+# aren't compared: matching a file's content can move them. `volatile`
+# lists more result keys not to compare. `compare: failed` only compares
+# whether the task failed.
+find_cases:
+  # Walking
+  - name: defaults
+    args: {}
+  - name: recurse
+    args: {recurse: true}
+  - name: recurse with depth 1
+    args: {recurse: true, depth: 1}
+  - name: recurse with depth 2
+    args: {recurse: true, depth: 2}
+  - name: depth 0 is unlimited
+    args: {recurse: true, depth: 0}
+  - name: depth without recurse
+    args: {depth: 3}
+  - name: hidden
+    args: {recurse: true, hidden: true}
+  - name: follow links into directories
+    args: {recurse: true, follow: true}
+  - name: path with a trailing slash
+    args: {paths: "{{ tree }}/"}
+  - name: path with repeated slashes and dots
+    args: {paths: "{{ tree }}//./sub/../sub", recurse: true}
+  - name: several paths
+    args: {paths: ["{{ tree }}/sub", "{{ tree }}/sub/deep"]}
+  - name: comma separated paths
+    args: {paths: "{{ tree }}/sub,{{ tree }}/sub/deep"}
+  - name: path alias
+    args: {path: "{{ tree }}/sub"}
+  - name: name alias
+    args: {name: "{{ tree }}/sub"}
+  - name: missing path
+    args: {paths: "{{ tree }}/missing"}
+  - name: path is a file
+    args: {paths: "{{ tree }}/a.txt"}
+  - name: missing path and a good one
+    args: {paths: ["{{ tree }}/missing", "{{ tree }}/sub"]}
+  - name: path through a link
+    args: {paths: "{{ tree }}/link-to-sub"}
+  - name: path with variables is expanded on the target
+    args: {paths: "$FIND_TREE/sub"}
+    environment: {FIND_TREE: "{{ tree }}"}
+  - name: path is required
+    args: {paths: []}
+
+  # File types
+  - name: file_type any
+    args: {file_type: any, recurse: true}
+  - name: file_type directory
+    args: {file_type: directory, recurse: true}
+  - name: file_type link
+    args: {file_type: link}
+  - name: invalid file_type
+    args: {file_type: socket}
+
+  # Patterns
+  - name: glob pattern
+    args: {patterns: '*.txt'}
+  - name: glob patterns are case-sensitive
+    args: {patterns: '*.TXT'}
+  - name: several glob patterns
+    args: {patterns: ['*.txt', '*.log']}
+  - name: comma separated patterns
+    args: {patterns: '*.txt,*.log'}
+  - name: pattern alias
+    args: {pattern: '?.txt'}
+  - name: glob character class
+    args: {patterns: '[ab].*'}
+  - name: excludes
+    args: {patterns: '*.txt', excludes: 'a*'}
+  - name: exclude alias
+    args: {exclude: '*.txt'}
+  - name: excludes without patterns
+    args: {excludes: ['*.txt', '*.log']}
+  - name: regex patterns
+    args: {patterns: '.*\.txt$', use_regex: true}
+  - name: regex patterns match from the start
+    args: {patterns: '\.txt', use_regex: true}
+  - name: regex excludes
+    args: {patterns: '.*', excludes: '^[ab]', use_regex: true}
+  - name: regex excludes without patterns
+    args: {excludes: '.*\.txt', use_regex: true}
+  - name: regex case-insensitive
+    args: {patterns: '(?i).*\.txt', use_regex: true}
+  - name: invalid regex pattern
+    args: {patterns: '(', use_regex: true}
+    # The message is the regular expression engine's own.
+    volatile: [skipped_paths, warnings]
+  - name: invalid regex exclude never reached
+    args: {patterns: 'nomatch', excludes: '(', use_regex: true}
+
+  # contains
+  - name: contains matches at the start of a line
+    args: {contains: hello, recurse: true}
+  - name: contains anywhere in a line
+    args: {contains: '.*hello'}
+  - name: contains with read_whole_file
+    args: {contains: world, read_whole_file: true}
+  - name: contains with read_whole_file across lines
+    args: {contains: 'hello\nworld', read_whole_file: true}
+  - name: contains dollar before the newline
+    args: {contains: 'world$', patterns: 'a.txt'}
+  - name: contains with windows line endings
+    args: {contains: 'one$', patterns: 'crlf.txt'}
+  - name: contains is ignored for directories
+    args: {contains: zzz, file_type: directory}
+  - name: contains in a file that is not utf-8
+    args: {contains: zzz}
+  - name: contains matching before bad bytes still fails
+    args: {contains: ok, patterns: 'bad-utf8.txt'}
+  - name: contains with latin-1
+    args: {contains: 'café', encoding: latin-1, patterns: 'latin.txt'}
+  - name: contains with ascii fails on other files
+    args: {contains: zzz, encoding: ascii}
+  - name: contains with an unknown encoding
+    args: {contains: zzz, encoding: no-such-codec}
+  - name: contains with an unreadable file
+    args: {contains: secret, patterns: 'unreadable.txt'}
+  - name: invalid contains regex
+    args: {contains: '('}
+    volatile: [skipped_paths, warnings]
+
+  # Age and size
+  - name: old files
+    args: {age: 1d}
+  - name: new files
+    args: {age: -1d}
+  - name: age in weeks
+    args: {age: 52w}
+  - name: age in upper case
+    args: {age: 1D}
+  - name: new files by ctime
+    args: {age: -1d, age_stamp: ctime}
+  - name: old files by ctime
+    args: {age: 1d, age_stamp: ctime}
+  - name: age by atime
+    args: {age: 1h, age_stamp: atime, patterns: '*.txt'}
+  - name: invalid age
+    args: {age: abc}
+  - name: invalid age_stamp
+    args: {age: 1d, age_stamp: birth}
+  - name: recently touched file
+    args: {age: -1h}
+    setup: touch new.txt
+  - name: size at least
+    args: {size: 1k}
+  - name: size at most
+    args: {size: -1b}
+  - name: size in bytes
+    args: {size: 2048}
+  - name: size with any file type
+    args: {size: 1k, file_type: any}
+  - name: invalid size
+    args: {size: 1x}
+
+  # Mode
+  - name: exact mode
+    args: {mode: "0644"}
+  - name: mode without a leading zero
+    args: {mode: "600"}
+  - name: mode with any bits
+    args: {mode: "0100", exact_mode: false}
+  - name: setuid mode
+    args: {mode: "4755"}
+  - name: symbolic mode
+    args: {mode: "u=rw,g=r,o=r"}
+  - name: invalid symbolic mode
+    args: {mode: "x=y"}
+  - name: mode as an integer
+    args: {mode: 420}
+  - name: empty mode
+    args: {mode: ""}
+  - name: mode on directories
+    args: {mode: "0755", file_type: directory}
+
+  # Checksums
+  - name: checksums
+    args: {get_checksum: true, patterns: '*.txt', excludes: unreadable.txt}
+  - name: sha256 checksums
+    args: {get_checksum: true, checksum_algorithm: sha256, patterns: 'a.txt'}
+  - name: checksum alias
+    args: {get_checksum: true, checksum: md5, patterns: 'a.txt'}
+  - name: checksum of an unreadable file
+    args: {get_checksum: true, patterns: 'unreadable.txt'}
+  - name: checksums with any file type
+    args: {get_checksum: true, file_type: any, patterns: '[ab]*'}
+
+  # limit
+  - name: limit
+    args: {limit: 2}
+  - name: limit with recurse
+    args: {limit: 3, recurse: true}
+  - name: limit larger than the matches
+    args: {limit: 100}
+  - name: limit zero
+    args: {limit: 0}
+  - name: negative limit
+    args: {limit: -1}
+
+  # Unreadable entries
+  - name: unreadable directory
+    args: {recurse: true, file_type: any}
+  - name: unsearchable directory
+    args: {paths: "{{ tree }}/unsearchable-dir"}
+
+  # Modes and options
+  - name: check mode
+    args: {patterns: '*.txt'}
+    check_mode: true
+  - name: unsupported option
+    args: {bogus: true}

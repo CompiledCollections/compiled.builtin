@@ -1,0 +1,36 @@
+# The template is written by compiled modules only: with no Python
+# interpreter on the target the task still works, and the builtin fails.
+- name: Fresh directory
+  ansible.builtin.shell: rm -rf "{{ tpl_dir }}" && mkdir -p "{{ tpl_dir }}"
+  changed_when: false
+
+- name: Template without Python
+  compiled.builtin.template:
+    src: hello.j2
+    dest: "{{ tpl_dir }}/no-python.txt"
+    mode: "0600"
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+    greeting: there
+  register: no_python
+
+- name: The builtin needs Python
+  ansible.builtin.template:
+    src: hello.j2
+    dest: "{{ tpl_dir }}/builtin.txt"
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+    greeting: there
+  register: builtin_no_python
+  ignore_errors: true
+
+- name: Read the result
+  ansible.builtin.slurp:
+    src: "{{ tpl_dir }}/no-python.txt"
+  register: written
+
+- ansible.builtin.assert:
+    that:
+      - no_python is changed
+      - written.content | b64decode == "hello there\n"
+      - builtin_no_python is failed

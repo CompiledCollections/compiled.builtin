@@ -11,10 +11,6 @@ other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) 
 # behind. Diff mode is on unless `diff: false`. `compare: failed` only
 # compares whether the task failed, for errors whose wording comes from
 # Python's or Go's own libraries.
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 lineinfile_cases:
   # Adding lines
   - name: add a line at the end
@@ -38,11 +34,9 @@ lineinfile_cases:
   - name: windows line endings are normalized
     content: "one\r\ntwo\r\n"
     args: {line: three}
-    builtin_differs: {before: "2.20", why: 'it works on bytes and keeps \r\n'}
   - name: old mac line endings are normalized
     content: "one\rtwo\r"
     args: {line: two}
-    builtin_differs: {before: "2.20", why: 'it works on bytes and keeps \r'}
   - name: line containing a newline
     content: "one\n"
     args: {line: "two\nthree"}
@@ -69,11 +63,9 @@ lineinfile_cases:
   - name: regexp \w is unicode-aware
     content: "näme=1\n"
     args: {regexp: '^\w+=', line: x=2}
-    builtin_differs: {before: "2.20", why: 'it matches bytes, where \w is ASCII-only'}
   - name: regexp \d is unicode-aware
     content: "٣\nplain\n"
     args: {regexp: '^\d$', line: digit}
-    builtin_differs: {before: "2.20", why: 'it matches bytes, where \d is ASCII-only'}
   - name: regexp \s matches a vertical tab
     content: "a\x0bb\n"
     args: {regexp: 'a\sb', line: spaced}
@@ -92,7 +84,6 @@ lineinfile_cases:
   - name: regexp unicode escape
     content: "café\n"
     args: {regexp: 'caf\u00e9', line: coffee}
-    builtin_differs: {before: "2.20", why: 'byte patterns have no \u escape'}
   - name: regexp octal escape
     content: "a\tb\n"
     args: {regexp: 'a\011b', line: tabbed}
@@ -255,7 +246,6 @@ lineinfile_cases:
   - name: unsupported option
     content: "a\n"
     args: {line: b, bogus: true}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option, so the supported options listed differ'}
   - name: path is required
     args: {line: b}
     no_path: true
@@ -357,26 +347,21 @@ lineinfile_cases:
   - name: latin-1 file
     content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
     args: {line: "thé", encoding: latin-1}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: utf-16 file
     content_b64: "{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"
     args: {line: three, encoding: utf-16}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: utf-8 with a BOM
     content_b64: "{{ '\ufeffone\n' | b64encode }}"
     args: {line: two}
   - name: invalid utf-8
     content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
     args: {line: x}
-    builtin_differs: {before: "2.20", why: 'it works on bytes, so any content is accepted'}
   - name: unencodable line
     content: "a\n"
     args: {line: "é", encoding: ascii}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
   - name: unknown encoding
     content: "a\n"
     args: {line: b, encoding: no-such-codec}
-    builtin_differs: {before: "2.20", why: 'it has no encoding option'}
 
   # validate
   - name: validate passes

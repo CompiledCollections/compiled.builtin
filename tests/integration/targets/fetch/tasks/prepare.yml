@@ -1,0 +1,16 @@
+# The same files to fetch for every run, and an empty destination.
+- name: Make the starting tree
+  ansible.builtin.shell:
+    cmd: |
+      chmod -R u+rwX "{{ fetch_dir }}" 2>/dev/null; rm -rf "{{ fetch_dir }}"
+      mkdir -p "{{ fetch_dir }}/src/dir" "{{ fetch_dir }}/dest" && cd "{{ fetch_dir }}/src" || exit 1
+      printf 'hello\n' > hello.txt
+      printf '\000\001binary' > binary.bin
+      : > empty.txt
+      printf 'unicode\n' > 'ünï ✓.txt'
+      printf 'secret\n' > unreadable.txt && chmod 0000 unreadable.txt
+      ln -s hello.txt link.txt
+      ln -s missing.txt broken.txt
+      {{ case.setup | default('') }}
+    executable: /bin/bash
+  changed_when: false

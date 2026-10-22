@@ -1,0 +1,7 @@
+# Containers for the modules that need a particular distribution. A target
+# that depends on this role can add_host containers with
+# ansible_connection: cgm_podman (connection_plugins/ here), and stop them with
+# tasks/stop.yml.
+- name: Podman is needed to run these tests
+  ansible.builtin.command: podman --version
+  changed_when: false

@@ -11,20 +11,40 @@ static binaries, so they run on targets without Python. See [WHY.md](WHY.md).
 | `compiled.builtin.command` | `ansible.builtin.command` |
 | `compiled.builtin.shell` | `ansible.builtin.shell` |
 | `compiled.builtin.lineinfile` | `ansible.builtin.lineinfile` |
+| `compiled.builtin.blockinfile` | `ansible.builtin.blockinfile` |
+| `compiled.builtin.replace` | `ansible.builtin.replace` |
 | `compiled.builtin.uri` | `ansible.builtin.uri` |
+| `compiled.builtin.get_url` | `ansible.builtin.get_url` |
 | `compiled.builtin.slurp` | `ansible.builtin.slurp` |
 | `compiled.builtin.stat` | `ansible.builtin.stat` |
+| `compiled.builtin.find` | `ansible.builtin.find` |
 | `compiled.builtin.file` | `ansible.builtin.file` |
 | `compiled.builtin.copy` | `ansible.builtin.copy` |
+| `compiled.builtin.template` | `ansible.builtin.template` |
+| `compiled.builtin.fetch` | `ansible.builtin.fetch` |
+| `compiled.builtin.wait_for_connection` | `ansible.builtin.wait_for_connection` |
 
 Each module takes the same options, accepts the same values (types,
 aliases, defaults, choices) and returns the same results as the builtin it
 replaces, including check mode, diff mode, warnings and error messages. The
 integration tests check this by running both side by side.
 
+Two more modules manage packages on minimal images, where
+`ansible.builtin.package` can't (its backends need Python, and dnf's and
+dnf5's need their Python bindings too). They take `package`'s options
+(`name`, `state`, `use`), and return results like `ansible.builtin.dnf`'s:
+
+| Module | Package manager |
+| --- | --- |
+| `compiled.builtin.apk` | apk on Alpine Linux (apk-tools 2 and 3) |
+| `compiled.builtin.microdnf` | microdnf on minimal RHEL, UBI and Fedora images (classic microdnf and dnf5) |
+
+Having no builtin to match, they are tested in containers of those
+distributions instead of side by side.
+
 ## Requirements
 
-ansible-core 2.16 or later.
+ansible-core 2.16 or later. Only 2.21, the current release, is tested.
 The targets need no Python (except for async tasks, see below).
 
 Binaries are named `<module>_<GOOS>_<GOARCH>`, Go's names for the target
@@ -44,13 +64,18 @@ system and architecture. The action plugin maps the target's `uname -s` and
 
 ### Differences from the builtins
 
-- **lineinfile regular expressions** use Python syntax but run on Go's RE2
-  engine. Unicode `\d`, `\w`, `\s`, `$`, `\Z`, escapes, flags and named groups
+- **Regular expressions** (lineinfile's `regexp`, `insertafter` and
+  `insertbefore`, blockinfile's `insertafter` and `insertbefore`, replace's
+  `regexp`, `after` and `before`, find's patterns with `use_regex` and
+  `contains`) use Python syntax but run on Go's RE2 engine. Unicode `\d`, `\w`, `\s`, `$`, `\Z`, escapes, flags and named groups
   behave as in Python. Lookahead and lookbehind, backreferences inside the
   pattern (`\1`, `(?P=name)`), conditional and atomic groups and verbose
   mode `(?x)` aren't available: the task fails and names the feature.
-  `\b` and `\B` only see ASCII word characters.
-- **lineinfile encodings**: UTF-8 (with or without a BOM), ASCII, Latin-1,
+  `\b` and `\B` only see ASCII word characters. replace's replacement
+  templates (`\1`, `\g<name>`, escapes) and its handling of empty matches
+  are Python's. An invalid pattern in find's `patterns` or `contains` is
+  reported as a skipped path, as by the builtin, but with Go's message.
+- **lineinfile, blockinfile, replace and find encodings**: UTF-8 (with or without a BOM), ASCII, Latin-1,
   Windows-1252, UTF-16 and UTF-32. Python's other codecs fail as unknown.
 - **SELinux** contexts are handled through extended attributes, so they
   work without Python's selinux bindings. `_default` contexts need
@@ -65,12 +90,19 @@ system and architecture. The action plugin maps the target's `uname -s` and
   - TLS error messages are Python's without the `(_ssl.c:NNNN)` location.
   - Response header values lose trailing whitespace, which Python keeps.
   - Response charsets beyond the lineinfile encodings are read as UTF-8.
+  - `ftp://` and `file://` URLs, which urllib reads itself, aren't
+    supported: the task fails and says so.
   - Its binary is larger (about 2.3 MB packed): Go's HTTP and TLS stack.
+- **get_url** runs the uri binary, so it has uri's differences above. Its
+  `checksum` algorithms are md5, sha1, sha224, sha256, sha384 and sha512;
+  Python's others (sha3, blake2) fail.
 - **copy** is the controller's own `ansible.builtin.copy` action (finding
   the source, checksums, uploads, directory walks, diffs), with the copy,
   file, stat and slurp modules it runs on the target replaced by the
   compiled ones. Its behaviour on the controller side is therefore always
-  that of the ansible-core running it.
+  that of the ansible-core running it. **template** (rendered on the
+  controller, then written by compiled.builtin.copy), **fetch** (stat and
+  slurp) and **wait_for_connection** (ping) work the same way.
 - **file** follows Python 3.14: a hard link (`state: hard`) to a symlink
   links the symlink's target, as `os.link` does from Python 3.14 on Linux.
   With Python 3.13 or older on the target, the builtin links the symlink
@@ -106,6 +138,10 @@ are differences too:
   `\w`, `\d` and `\s` match ASCII only. compiled.builtin.lineinfile reads
   text (UTF-8 by default), normalizes line endings and matches Unicode, as
   the builtin does from 2.20.
+- **blockinfile, before 2.20:** the builtin works on bytes: it has no
+  `encoding` option, splits lines only at `\n` and `\r` (not at `\v`, `\f`
+  or Unicode line separators), and its `insertafter`/`insertbefore` `\w`,
+  `\d` and `\s` match ASCII only.
 
 - **stat, before 2.21:** the builtin doesn't return `disk_usage_bytes`.
 - **stat, before 2.20:** the builtin has no `get_selinux_context` option.
@@ -114,6 +150,21 @@ are differences too:
   can't look at a path for lack of permissions.
 - **file, before 2.19:** several error messages are worded differently, and
   the builtin returns `diff` even when diff mode is off.
+- **replace, before 2.20:** the builtin works on bytes: it keeps `\r\n`
+  and `\r` line endings, accepts files that don't decode, and writes
+  characters the `encoding` can't represent instead of failing. Before 2.19,
+  it fails with its own message when it can't read the file.
+- **find, before 2.21:** the builtin doesn't return `blocks` or
+  `disk_usage_bytes`, and words its message for files it can't decode for
+  `contains` differently. Before 2.19 it has no `checksum_algorithm`, and
+  its warning for entries it can't look at is worded differently; before
+  2.18 it has no `limit`, and before 2.17 no `encoding`.
+- **get_url, before 2.19:** the builtin returns the URL without masking
+  credentials in it, and doesn't find the file in BSD-style checksum files
+  (`SHA256 (file) = ...`). Before 2.18, it moves a download into place
+  before finding that its checksum doesn't match.
+- **fetch, before 2.19:** the builtin slurp it uses words its errors in
+  lowercase.
 - **copy, before 2.21:** the builtin doesn't apply `directory_mode` to the
   destination directory of a `remote_src` directory copy.
 - **copy, before 2.19:** copying a directory on the target (`remote_src`)
@@ -123,8 +174,8 @@ are differences too:
 - **copy, before 2.17:** a `remote_src` file copy keeps the mode of the file
   it replaces instead of taking the source's.
 
-The integration tests run every case on every version, and skip the
-comparison for the cases above on the versions they apply to.
+Only ansible-core 2.21 is tested, so these differences, found when older
+versions were tested, aren't checked any more.
 
 ## Layout
 
@@ -137,21 +188,26 @@ internal/ansible/            Shared plumbing: read args, write results, plus Go
                              run_command)
 internal/files/              File metadata: mode, owner, attributes, SELinux,
                              atomic writes, backups and os.walk (lineinfile,
-                             uri, stat, file and copy)
+                             blockinfile, replace, find, uri, get_url, stat,
+                             file and copy)
 internal/codecs/             Text encodings by Python codec name
 plugins/modules/
   <module>_linux_amd64       Precompiled binary (the only platform shipped)
   <module>.meta              Makes the module name resolvable, so its docs are
                              found. Ansible ignores its content; only the name
                              matters. (shell has only this and its .yml: it
-                             runs the command binary)
+                             runs the command binary; get_url runs uri's;
+                             template, fetch and wait_for_connection only
+                             have action plugins)
   <module>.yml               Sidecar docs read by ansible-doc
 plugins/action/<module>.py   Validates arguments with the builtin's argument
-                             spec, then picks, or compiles, the binary (copy
-                             runs ansible-core's copy action instead, with
-                             the compiled modules swapped in)
+                             spec, then picks, or compiles, the binary (copy,
+                             template, fetch and wait_for_connection run
+                             ansible-core's action instead, with the compiled
+                             modules swapped in)
 plugins/plugin_utils/        Shared action plugin and build code
-tests/integration/targets/   Side-by-side tests against ansible.builtin
+tests/integration/targets/   Side-by-side tests against ansible.builtin (and
+                             container tests for apk and microdnf)
 tests/build.py               Build and test script
 ```
 
@@ -230,7 +286,8 @@ come in three layers:
 - **Integration** (`ansible-test integration`): each case in
   `tests/integration/targets/<module>/vars/main.yml` runs
   `ansible.builtin.<module>` and `compiled.builtin.<module>` with the same
-  arguments and asserts identical results; for lineinfile, file and copy
+  arguments and asserts identical results; for the modules that write files
   also identical files (content, mode, owner, times, symlinks, backups)
-  afterwards. To cover a new
-  option or edge case, add a case there and run `testdocs`.
+  afterwards. To cover a new option or edge case, add a case there and run
+  `testdocs`. apk and microdnf run in Alpine, UBI and Fedora containers,
+  which need podman on the controller.

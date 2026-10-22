@@ -16,9 +16,6 @@
 
 - name: Free-form commands are split like ansible.builtin.shell
   ansible.builtin.include_tasks: free_form.yml
-  # Before ansible-core 2.19, only the builtin can take a free-form string:
-  # the task parser rejects it for other modules when loading the playbook.
-  when: ansible_version.full is version('2.19', '>=')
 
 - name: Async
   ansible.builtin.include_tasks: async.yml

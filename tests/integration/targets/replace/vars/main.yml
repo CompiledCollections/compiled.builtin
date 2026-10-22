@@ -1,0 +1,313 @@
+rep_dir: "{{ output_dir }}/replace"
+rep_file: "{{ rep_dir }}/file.txt"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+
+# Each case writes `content` (or base64 `content_b64`) to rep_file, runs
+# ansible.builtin.replace and compiled.builtin.replace with `args` (path
+# defaults to rep_file), and compares the results and the files left
+# behind. Diff mode is on unless `diff: false`. `compare: failed` only
+# compares whether the task failed, for errors whose wording comes from
+# Python's or Go's own libraries.
+replace_cases:
+  # Replacing
+  - name: replace every match
+    content: "a=1\nb=1\na=2\n"
+    args: {regexp: '^a=', replace: 'A='}
+  - name: no match
+    content: "a\nb\n"
+    args: {regexp: 'zzz', replace: 'y'}
+  - name: replacement equal to the match
+    content: "a\n"
+    args: {regexp: 'a', replace: 'a'}
+  - name: remove matches with the default replace
+    content: "keep # comment\nother\n"
+    args: {regexp: '\s*#.*$'}
+  - name: group references
+    content: "name=old value\n"
+    args: {regexp: '^(\w+)=(.*)$', replace: '\2=\1'}
+  - name: named group references
+    content: "name=old\n"
+    args: {regexp: '^(?P<key>\w+)=(?P<val>.*)$', replace: '\g<val>=\g<key> \g<0>'}
+  - name: optional group that did not match
+    content: "b\n"
+    args: {regexp: '^(a)?(b)$', replace: 'x\1y\2'}
+  - name: escapes in the replacement
+    content: "a b\n"
+    args: {regexp: '^(\w) (\w)$', replace: '\1\t\2\\'}
+  - name: octal escape in the replacement
+    content: "a\n"
+    args: {regexp: 'a', replace: '\101\0'}
+  - name: unknown escapes kept in the replacement
+    content: "a\n"
+    args: {regexp: 'a', replace: '\-\.\é'}
+  - name: newline in the replacement
+    content: "a b\n"
+    args: {regexp: ' ', replace: '\n'}
+  - name: multiline caret matches each line
+    content: "one\ntwo\n"
+    args: {regexp: '^', replace: '# '}
+  - name: multiline dollar matches each line end
+    content: "one\ntwo\n"
+    args: {regexp: '$', replace: ';'}
+  - name: empty matches after a match are replaced
+    content: "a  \nb  \n"
+    args: {regexp: '\s*$', replace: '-'}
+  - name: empty pattern
+    content: "ab\n"
+    args: {regexp: '', replace: '-'}
+  - name: star matches empty strings
+    content: "abxd\n"
+    args: {regexp: 'x*', replace: '-'}
+  - name: dot does not match newlines
+    content: "a\nb\n"
+    args: {regexp: 'a.b', replace: 'x'}
+  - name: dotall flag
+    content: "a\nb\n"
+    args: {regexp: '(?s)a.b', replace: 'x'}
+  - name: case-insensitive flag
+    content: "Key=1\nkey=2\n"
+    args: {regexp: '(?i)^key', replace: 'K'}
+  - name: unicode classes
+    content: "näme=١\n"
+    args: {regexp: '\w+=\d', replace: 'x'}
+  - name: match across lines
+    content: "a\nb\nc\n"
+    args: {regexp: 'a\nb', replace: 'ab'}
+  - name: remove blank lines
+    content: "a\n\n  \nb\n"
+    args: {regexp: '^\s*\n', replace: ''}
+  - name: unicode content
+    content: "héllo wörld ✓\n"
+    args: {regexp: 'ö', replace: 'oe'}
+  - name: windows line endings become newlines
+    content: "a\r\nb\r\n"
+    args: {regexp: 'a', replace: 'x'}
+  - name: windows line endings unchanged without a match
+    content: "a\r\nb\r\n"
+    args: {regexp: 'zzz', replace: 'x'}
+  - name: old mac line endings become newlines
+    content: "a\rb\r"
+    args: {regexp: '^b$', replace: 'x'}
+  - name: file without a trailing newline
+    content: "a\nb"
+    args: {regexp: 'b$', replace: 'c'}
+  - name: empty file
+    content: ""
+    args: {regexp: '^', replace: 'x'}
+
+  # after and before
+  - name: after
+    content: "a\nSTART\na\nb\n"
+    args: {regexp: '^a$', replace: 'x', after: 'START'}
+  - name: before
+    content: "a\nEND\na\n"
+    args: {regexp: '^a$', replace: 'x', before: 'END'}
+  - name: after and before
+    content: "a\nSTART\na\nEND\na\n"
+    args: {regexp: '^a$', replace: 'x', after: 'START\n', before: 'END'}
+  - name: after and before take the shortest section
+    content: "S\na\nE\na\nE\n"
+    args: {regexp: 'a', replace: 'x', after: 'S', before: 'E'}
+  - name: after without a match
+    content: "a\n"
+    args: {regexp: 'a', replace: 'x', after: 'nomatch'}
+  - name: before without a match
+    content: "a\n"
+    args: {regexp: 'a', replace: 'x', before: 'nomatch'}
+  - name: after and before in the wrong order
+    content: "END\na\nSTART\n"
+    args: {regexp: 'a', replace: 'x', after: 'START', before: 'END'}
+  - name: after with multiline flag
+    content: "x <VirtualHost *>\na\n<VirtualHost *>\na\n</VirtualHost>\n"
+    args: {regexp: '^a$', replace: 'b', after: '(?m)^<VirtualHost [*]>', before: '</VirtualHost>'}
+  - name: after does not use multiline
+    content: "x\nSTART\na\n"
+    args: {regexp: 'a', replace: 'b', after: '^START'}
+  - name: caret at the start of the section
+    content: "xa\na\n"
+    args: {regexp: '^a', replace: 'b', after: 'x'}
+  - name: empty after is ignored
+    content: "a\n"
+    args: {regexp: 'a', replace: 'x', after: ''}
+  - name: after with a group of its own
+    content: "k=1\na\n"
+    args: {regexp: 'a', replace: 'x', after: '(k)=1'}
+  - name: replacement referring to after's group
+    content: "k=1\na\n"
+    args: {regexp: 'a', replace: '\1', after: '(k)=1'}
+  - name: invalid after regexp
+    content: "a\n"
+    args: {regexp: 'a', replace: 'x', after: '('}
+    compare: failed
+
+  # Errors
+  - name: invalid regexp
+    content: "a\n"
+    args: {regexp: '(', replace: 'x'}
+    compare: failed
+  - name: bad escape in the replacement
+    content: "a\n"
+    args: {regexp: 'a', replace: '\q'}
+  - name: invalid group reference
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\2'}
+  - name: invalid group reference without a match
+    content: "a\n"
+    args: {regexp: '(z)', replace: '\2'}
+  - name: unknown group name
+    content: "a\n"
+    args: {regexp: '(?P<k>a)', replace: '\g<nope>'}
+  - name: missing group name
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\g<>'}
+  - name: bad character in group name
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\g<1a>'}
+  - name: unterminated group name
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\g<a'}
+  - name: missing angle bracket
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\g'}
+  - name: trailing backslash
+    content: "a\n"
+    args: {regexp: 'a', replace: 'x\'}
+  - name: octal escape out of range
+    content: "a\n"
+    args: {regexp: '(a)', replace: '\400'}
+  - name: regexp is required
+    content: "a\n"
+    args: {replace: x}
+  - name: path is required
+    args: {regexp: a}
+    no_path: true
+  - name: path is a directory
+    args: {path: "{{ rep_dir }}", regexp: a}
+  - name: missing file
+    args: {path: "{{ rep_dir }}/missing.txt", regexp: a}
+  - name: unreadable file
+    content: "a\n"
+    file_mode: "0000"
+    args: {regexp: a, replace: b}
+  - name: unsupported option
+    content: "a\n"
+    args: {regexp: a, bogus: true}
+
+  # Aliases
+  - name: dest alias
+    content: "a\n"
+    args: {dest: "{{ rep_file }}", regexp: a, replace: b}
+  - name: name alias
+    content: "a\n"
+    args: {name: "{{ rep_file }}", regexp: a, replace: b}
+  - name: destfile alias
+    content: "a\n"
+    args: {destfile: "{{ rep_file }}", regexp: a, replace: b}
+  - name: path with variables is expanded on the target
+    content: "a\n"
+    args: {path: "$REP_DIR/file.txt", regexp: a, replace: b}
+    environment: {REP_DIR: "{{ rep_dir }}"}
+
+  # Backups
+  - name: backup when changed
+    content: "a\n"
+    args: {regexp: a, replace: b, backup: true}
+  - name: no backup when unchanged
+    content: "a\n"
+    args: {regexp: z, replace: b, backup: true}
+
+  # Check and diff modes
+  - name: check mode with a change
+    content: "a\n"
+    args: {regexp: a, replace: b}
+    check_mode: true
+  - name: check mode without a change
+    content: "a\n"
+    args: {regexp: z, replace: b}
+    check_mode: true
+  - name: check mode with a mode change
+    content: "a\n"
+    args: {regexp: z, replace: b, mode: "0600"}
+    check_mode: true
+  - name: diff mode off
+    content: "a\n"
+    args: {regexp: a, replace: b}
+    diff: false
+
+  # File attributes
+  - name: mode as an octal string
+    content: "a\n"
+    args: {regexp: a, replace: b, mode: "0600"}
+  - name: mode as an integer
+    content: "a\n"
+    args: {regexp: a, replace: b, mode: 0600}
+  - name: symbolic mode
+    content: "a\n"
+    args: {regexp: a, replace: b, mode: "u+x,g-r,o="}
+  - name: only the mode changes
+    content: "a\n"
+    args: {regexp: z, replace: b, mode: "0600"}
+  - name: mode after a before/after miss is not applied
+    content: "a\n"
+    args: {regexp: a, replace: b, after: nomatch, mode: "0600"}
+  - name: invalid mode
+    content: "a\n"
+    args: {regexp: a, replace: b, mode: "abc"}
+  - name: existing permissions are kept on rewrite
+    content: "a\n"
+    args: {regexp: a, replace: b}
+    file_mode: "0640"
+  - name: owner by name
+    content: "a\n"
+    args: {regexp: a, replace: b, owner: "{{ current_user }}"}
+  - name: unknown owner
+    content: "a\n"
+    args: {regexp: a, replace: b, owner: no_such_user_xyz}
+  - name: group
+    content: "a\n"
+    args: {regexp: z, replace: b, group: "{{ other_group }}"}
+  - name: unknown group
+    content: "a\n"
+    args: {regexp: a, replace: b, group: no_such_group_xyz}
+  - name: unsafe_writes is accepted
+    content: "a\n"
+    args: {regexp: a, replace: b, unsafe_writes: true}
+
+  # Encodings
+  - name: latin-1 file
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {regexp: 'é', replace: 'è', encoding: latin-1}
+  - name: utf-16 file
+    content_b64: "{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"
+    args: {regexp: 'two', replace: 'deux', encoding: utf-16}
+  - name: utf-8 with a BOM
+    content_b64: "{{ '﻿one\n' | b64encode }}"
+    args: {regexp: 'one', replace: 'two'}
+  - name: invalid utf-8
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {regexp: 'caf', replace: 'x'}
+  - name: unencodable replacement
+    content: "a\n"
+    args: {regexp: a, replace: "é", encoding: ascii}
+  - name: unknown encoding
+    content: "a\n"
+    args: {regexp: a, replace: b, encoding: no-such-codec}
+
+  # validate
+  - name: validate passes
+    content: "a\n"
+    args: {regexp: a, replace: b, validate: "grep -q b %s"}
+  - name: validate fails
+    content: "a\n"
+    args: {regexp: a, replace: b, validate: "grep -q zzz %s"}
+  - name: validate without %s
+    content: "a\n"
+    args: {regexp: a, replace: b, validate: "true"}
+
+  # Symlinks
+  - name: a symlink's target is updated
+    content: "a\n"
+    args: {path: "{{ rep_dir }}/link.txt", regexp: a, replace: b}
+    symlink: true

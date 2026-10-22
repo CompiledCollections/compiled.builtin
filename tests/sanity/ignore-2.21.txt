@@ -1,18 +1,36 @@
+plugins/modules/apk.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/apk.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/blockinfile.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/blockinfile.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/command.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/command.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/copy.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/copy.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/fetch.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/fetch.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/file.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/file.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/find.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/find.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/get_url.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/get_url.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/lineinfile.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/lineinfile.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/microdnf.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/microdnf.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/ping.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/ping.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/replace.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/replace.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/shell.meta validate-modules!skip  # makes the module name resolvable for its docs (shell runs the command binary), not a module
 plugins/modules/shell.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/slurp.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/slurp.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/stat.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/stat.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/template.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/template.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
 plugins/modules/uri.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
 plugins/modules/uri.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided
+plugins/modules/wait_for_connection.meta validate-modules!skip  # makes the module name resolvable so its docs are found, not a module
+plugins/modules/wait_for_connection.yml validate-modules:missing-gplv3-license  # the collection is GPL-2.0-or-later until the GPL-3.0-or-later change is decided

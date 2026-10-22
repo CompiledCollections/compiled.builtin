@@ -1,0 +1,26 @@
+# compiled.builtin.microdnf has no builtin to compare with, so the cases check
+# what microdnf did, in containers without Python: classic microdnf on
+# UBI 9 and 10, and dnf5 on Fedora minimal.
+- name: Run the cases in each container, then stop it
+  ansible.builtin.include_tasks: container.yml
+  loop:
+    - {container: cgm-microdnf-ubi9, image: "registry.access.redhat.com/ubi9/ubi-minimal"}
+    - {container: cgm-microdnf-ubi10, image: "registry.access.redhat.com/ubi10/ubi-minimal"}
+    - {container: cgm-microdnf-fedora, image: "registry.fedoraproject.org/fedora-minimal:44"}
+  loop_control:
+    loop_var: target
+    label: "{{ target.image }}"
+
+- name: Fails where there is no microdnf
+  compiled.builtin.microdnf:
+    name: tar
+    state: present
+  register: no_microdnf
+  ignore_errors: true
+  when: not '/usr/bin/microdnf' is exists
+
+- ansible.builtin.assert:
+    that:
+      - no_microdnf is failed
+      - no_microdnf.msg is search('microdnf was not found')
+  when: no_microdnf is not skipped

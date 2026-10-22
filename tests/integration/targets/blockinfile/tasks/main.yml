@@ -1,0 +1,9 @@
+- name: Compare compiled.builtin.blockinfile with ansible.builtin.blockinfile
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ blockinfile_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Regular expressions RE2 can't run fail clearly
+  ansible.builtin.include_tasks: unsupported_regexp.yml

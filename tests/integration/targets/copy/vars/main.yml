@@ -14,10 +14,6 @@ other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) 
 # run itself read NOW. `compare: failed` only compares whether the task
 # failed. `python_differs: {before: VERSION, why: ...}` skips the
 # comparison on targets with an older Python.
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 copy_cases:
   # content
   - name: content to a new file
@@ -142,7 +138,6 @@ copy_cases:
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/same.txt", remote_src: true}
   - name: remote file replacing a file
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}
-    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
   - name: remote file into a directory
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/dir", remote_src: true}
   - name: remote file into a new directory (trailing slash)
@@ -153,7 +148,6 @@ copy_cases:
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, mode: "0600"}
   - name: remote file with backup
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, backup: true}
-    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
   - name: remote file in check mode
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true}
     check_mode: true
@@ -161,7 +155,6 @@ copy_cases:
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, force: false}
   - name: remote file over a symlink
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/link.txt", remote_src: true}
-    builtin_differs: {before: "2.17", why: 'an older builtin keeps the replaced file''s mode instead of taking the source''s'}
   - name: remote file with a failing validate
     args: {src: "{{ rsrc }}/hello.txt", dest: "{{ dest }}/old.txt", remote_src: true, validate: "false %s"}
   - name: remote missing src
@@ -178,18 +171,14 @@ copy_cases:
     args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
   - name: remote directory to a new path
     args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true}
-    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
   - name: remote directory to a new nested path
     args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/newdir/a", remote_src: true}
   - name: remote directory with directory_mode
     args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, directory_mode: "0700"}
-    builtin_differs: {before: "2.21", why: 'an older builtin doesn''t apply directory_mode to the destination directory itself'}
   - name: remote directory, links followed
     args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: true}
-    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
   - name: remote directory, links not followed
     args: {src: "{{ rsrc }}/tree", dest: "{{ dest }}/newdir", remote_src: true, local_follow: false}
-    builtin_differs: {before: "2.19", why: 'an older builtin doesn''t keep times or symlinks when copying a directory on the target'}
   - name: remote directory into a partial copy
     args: {src: "{{ rsrc }}/tree/", dest: "{{ dest }}/dir", remote_src: true}
     setup: |

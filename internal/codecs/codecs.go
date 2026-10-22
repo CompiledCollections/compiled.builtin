@@ -126,7 +126,13 @@ func Decode(data []byte, enc string) (string, error) {
 // Encode encodes s, failing like Python's strict error handler. Error
 // positions count from the start of the line, as Python reports them when
 // writing a file line by line.
-func Encode(s, enc string) ([]byte, error) {
+func Encode(s, enc string) ([]byte, error) { return encode(s, enc, true) }
+
+// EncodeString is Encode for text written in one go, where error positions
+// count from the start of s.
+func EncodeString(s, enc string) ([]byte, error) { return encode(s, enc, false) }
+
+func encode(s, enc string, perLine bool) ([]byte, error) {
 	c, err := Lookup(enc)
 	if err != nil {
 		return nil, err
@@ -142,7 +148,7 @@ func Encode(s, enc string) ([]byte, error) {
 			limit, name = 0x7f, "ascii"
 		}
 		out := make([]byte, 0, len(s))
-		pos := 0 // Python encodes each line on its own, so positions are per line
+		pos := 0
 		for _, r := range s {
 			switch {
 			case c == "cp1252" && (r >= 0x80 && r <= 0x9f || r > 0xff):
@@ -157,7 +163,7 @@ func Encode(s, enc string) ([]byte, error) {
 				out = append(out, byte(r))
 			}
 			pos++
-			if r == '\n' {
+			if r == '\n' && perLine {
 				pos = 0
 			}
 		}

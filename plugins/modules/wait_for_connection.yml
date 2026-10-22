@@ -1,0 +1,116 @@
+DOCUMENTATION:
+  module: wait_for_connection
+  short_description: Waits until remote system is reachable/usable
+  description:
+  - 'Compiled Go replacement for M(ansible.builtin.wait_for_connection), with the same options and results. It does not need Python on the target:
+    the connection is tested with M(compiled.builtin.ping).'
+  - Waits for a total of O(timeout) seconds.
+  - Retries the transport connection after a timeout of O(connect_timeout).
+  - Tests the transport connection every O(sleep) seconds.
+  - This module makes use of internal ansible transport (and configuration) and the M(compiled.builtin.ping) module
+    to guarantee correct end-to-end functioning.
+  version_added: 1.0.0
+  options:
+    connect_timeout:
+      description:
+      - Maximum number of seconds to wait for a connection to happen before closing and retrying.
+      type: int
+      default: 5
+    delay:
+      description:
+      - Number of seconds to wait before starting to poll.
+      type: int
+      default: 0
+    sleep:
+      description:
+      - Number of seconds to sleep between checks.
+      type: int
+      default: 1
+    timeout:
+      description:
+      - Maximum number of seconds to wait for.
+      type: int
+      default: 600
+  extends_documentation_fragment:
+  - ansible.builtin.action_common_attributes
+  - ansible.builtin.action_common_attributes.flow
+  attributes:
+    action:
+      support: full
+      description: Indicates this has a corresponding action plugin so some parts of the options can be executed on the controller.
+    async:
+      support: none
+      description: Supports being used with the C(async) keyword.
+    bypass_host_loop:
+      support: none
+      description: Forces a "global" task that does not execute per host.
+    check_mode:
+      support: none
+      description: Can run in check_mode and return changed status prediction without modifying target.
+    diff_mode:
+      support: none
+      description: Will return details on what has changed (or possibly needs changing in check_mode), when in diff mode.
+    platform:
+      details: As long as there is a connection plugin
+      platforms: posix
+      description: Target OS/families that can be operated against.
+  seealso:
+  - module: ansible.builtin.wait_for_connection
+  - module: ansible.builtin.wait_for
+  author:
+  - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Wait 600 seconds for target connection to become reachable/usable
+    compiled.builtin.wait_for_connection:
+
+  - name: Wait 300 seconds, but only start checking after 60 seconds
+    compiled.builtin.wait_for_connection:
+      delay: 60
+      timeout: 300
+
+  # Wake desktops, wait for them to become ready and continue playbook
+  - hosts: all
+    gather_facts: no
+    tasks:
+    - name: Send magic Wake-On-Lan packet to turn on individual systems
+      community.general.wakeonlan:
+        mac: '{{ mac }}'
+        broadcast: 192.168.0.255
+      delegate_to: localhost
+
+    - name: Wait for system to become reachable
+      compiled.builtin.wait_for_connection:
+
+    - name: Gather facts for first time
+      ansible.builtin.setup:
+
+  # Build a new VM, wait for it to become ready and continue playbook
+  - hosts: all
+    gather_facts: no
+    tasks:
+    - name: Clone new VM, if missing
+      community.vmware.vmware_guest:
+        hostname: '{{ vcenter_ipaddress }}'
+        name: '{{ inventory_hostname_short }}'
+        template: Windows 2012R2
+        customization:
+          hostname: '{{ vm_shortname }}'
+          runonce:
+          - cmd.exe /c winrm.cmd quickconfig -quiet -force
+      delegate_to: localhost
+
+    - name: Wait for system to become reachable over WinRM, polling every 10 seconds
+      compiled.builtin.wait_for_connection:
+        timeout: 900
+        sleep: 10
+
+    - name: Gather facts for first time
+      ansible.builtin.setup:
+
+RETURN:
+  elapsed:
+    description: The number of seconds that elapsed waiting for the connection to appear.
+    returned: always
+    type: float
+    sample: 23.1
