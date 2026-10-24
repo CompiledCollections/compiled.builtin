@@ -5,7 +5,7 @@
 // Python bindings), so the results follow ansible.builtin.dnf's.
 //
 // On Fedora, microdnf is dnf5 under another name; both are handled.
-package main
+package microdnf
 
 import (
 	"fmt"
@@ -119,7 +119,8 @@ func failed(argv []string, rc int, stdout, stderr string) {
 	ansible.Fail(msg, ansible.Result{"rc": rc, "results": []string{}, "stdout": stdout, "stderr": stderr, "cmd": argv})
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var args Args
 	ansible.ReadArgs(&args)
 	if args.Use != "" && args.Use != "auto" && args.Use != "microdnf" {

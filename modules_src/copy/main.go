@@ -1,7 +1,7 @@
 // Copy equivalent module, written in Go. Mirrors ansible.builtin.copy: the
 // target side of a copy, after the action plugin has uploaded the source
 // (or, with remote_src, a copy between paths on the target).
-package main
+package copy
 
 import (
 	"crypto/md5"
@@ -36,7 +36,8 @@ type Args struct {
 
 var args Args
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	// Type 'path' options are expanded by AnsibleModule.
 	src := "None"

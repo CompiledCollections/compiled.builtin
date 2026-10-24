@@ -1,6 +1,6 @@
 // Command equivalent module, written in Go. Mirrors ansible.builtin.command,
 // including the _uses_shell/executable handling the shell action relies on.
-package main
+package command
 
 import (
 	"fmt"
@@ -48,7 +48,8 @@ func path(p *string) *string {
 	return &v
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var a Args
 	ansible.ReadArgs(&a)
 

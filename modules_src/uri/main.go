@@ -1,7 +1,7 @@
 // Uri equivalent module, written in Go. A port of ansible.builtin.uri and
 // the parts of module_utils.urls (fetch_url, open_url) it uses; client.go
 // reproduces the urllib behaviour those rely on.
-package main
+package uri
 
 import (
 	"crypto/sha1"
@@ -92,7 +92,8 @@ var jsonCandidates = map[string]bool{"json": true, "javascript": true}
 
 var args Args
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	if args.GetURL {
 		getURL()

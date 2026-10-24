@@ -1,6 +1,6 @@
 //go:build !linux && !darwin && !freebsd && !netbsd
 
-package main
+package stat
 
 import "syscall"
 

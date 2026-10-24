@@ -52,25 +52,51 @@ var (
 	cleanup      []string
 )
 
-// ReadArgs decodes the module arguments into v, and the internal arguments
-// into Params. Ansible passes binary modules the path to a JSON args file as
-// the first argument; stdin is a fallback for running a module by hand.
-func ReadArgs(v any) {
-	var (
-		data []byte
-		err  error
-	)
+// inputData is the module's JSON input, read once by input.
+var inputData []byte
+
+// input returns the module's JSON input. Ansible passes binary modules the
+// path to a JSON args file as the first argument; stdin is a fallback for
+// running a module by hand.
+func input() []byte {
+	if inputData != nil {
+		return inputData
+	}
+	var err error
 	if len(os.Args) > 1 {
-		data, err = os.ReadFile(os.Args[1])
+		inputData, err = os.ReadFile(os.Args[1])
 	} else {
-		data, err = io.ReadAll(os.Stdin)
+		inputData, err = io.ReadAll(os.Stdin)
 	}
 	if err != nil {
 		Fail(fmt.Sprintf("failed to read input: %v", err), nil)
 	}
-	if len(data) == 0 {
-		data = []byte("{}")
+	if len(inputData) == 0 {
+		inputData = []byte("{}")
 	}
+	return inputData
+}
+
+// Dispatch runs the module the action plugin names in _compiled_module.
+// Every module is in one multi-call binary, so this is its main.
+func Dispatch(modules map[string]func()) {
+	var call struct {
+		Module string `json:"_compiled_module"`
+	}
+	if err := json.Unmarshal(input(), &call); err != nil {
+		Fail(fmt.Sprintf("failed to parse input JSON: %v", err), nil)
+	}
+	main, ok := modules[call.Module]
+	if !ok {
+		Fail(fmt.Sprintf("no compiled module named %q in this binary", call.Module), nil)
+	}
+	main()
+}
+
+// ReadArgs decodes the module arguments into v, and the internal arguments
+// into Params.
+func ReadArgs(v any) {
+	data := input()
 	if err := json.Unmarshal(data, &Params); err != nil {
 		Fail(fmt.Sprintf("failed to parse input JSON: %v", err), nil)
 	}

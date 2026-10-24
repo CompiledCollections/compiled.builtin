@@ -4,6 +4,24 @@ compiled.builtin Release Notes
 
 .. contents:: Topics
 
+Unreleased
+==========
+
+Major Changes
+-------------
+
+- All modules are now in one multi-call binary, ``multicall_<goos>_<goarch>``,
+  instead of one binary per module. The shipped binary is 3.1 MB instead of
+  15 MB for the 13 separate ones, which keeps the collection well under
+  Galaxy's 20 MB upload limit. Each task still uploads one binary, about
+  2 MB more than before, and it starts faster (about 60 ms instead of 80 ms).
+
+Minor Changes
+-------------
+
+- The binary is packed with UPX's default method (``upx -9``) instead of
+  LZMA, which would take about four times as long to unpack at every start.
+
 v0.4.0
 ======
 

@@ -4,11 +4,11 @@
 # Collection artifacts from ansible-galaxy collection build
 /compiled-builtin-*.tar.gz
 
-# Compiled module binaries (<module>_<goos>_<goarch>). They are built by
+# The compiled multi-call binary (multicall_<goos>_<goarch>). It is built by
 # tests/build.py in CI and for releases, and compiled on demand by the action
 # plugins when missing. Only the docs (.yml) and name placeholders (.meta) are
-# tracked here. To commit the binaries instead, delete these three lines and
-# add a validate-modules!skip entry for each binary to tests/sanity/ignore-*.txt.
+# tracked here. To commit the binary instead, delete these three lines and
+# add a validate-modules!skip entry for the binary to tests/sanity/ignore-*.txt.
 /plugins/modules/*
 !/plugins/modules/*.yml
 !/plugins/modules/*.meta

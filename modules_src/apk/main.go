@@ -2,7 +2,7 @@
 // options of ansible.builtin.package. There is no builtin module for apk
 // (ansible.builtin.package hands it to community.general.apk, which needs
 // Python), so the results follow ansible.builtin.dnf's.
-package main
+package apk
 
 import (
 	"fmt"
@@ -54,7 +54,8 @@ func run(argv []string) (int, string, string) {
 	return ansible.RunCommand(argv, ansible.RunOptions{NoExpand: true})
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var args Args
 	ansible.ReadArgs(&args)
 	if args.Use != "" && args.Use != "auto" && args.Use != "apk" {

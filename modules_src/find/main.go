@@ -2,7 +2,7 @@
 // ansible.builtin.find; regular expressions use Python syntax, translated
 // to Go's RE2 engine (see internal/ansible/pyre.go), and the directory walk
 // is os.walk's (see internal/files/walk.go).
-package main
+package find
 
 import (
 	"crypto/md5"
@@ -402,7 +402,8 @@ func rawMode() string {
 	return ""
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	mode := rawMode()
 

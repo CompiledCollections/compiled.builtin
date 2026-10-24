@@ -2,7 +2,7 @@
 // ansible.builtin.blockinfile; insertafter and insertbefore use Python
 // regular expression syntax, translated to Go's RE2 engine (see
 // internal/ansible/pyre.go).
-package main
+package blockinfile
 
 import (
 	"fmt"
@@ -113,7 +113,8 @@ func writeChanges(contents, path string) {
 	}
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	path := ansible.ExpandPath(args.Path)
 

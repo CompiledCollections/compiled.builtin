@@ -2,7 +2,7 @@
 # GNU General Public License v2.0+ (see https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt)
 """Build and test the compiled.builtin modules. Run from anywhere:
 
-    python3 tests/build.py build [--platform linux/amd64 ...] [--module ping ...]
+    python3 tests/build.py build [--platform linux/amd64 ...]
     python3 tests/build.py unit
     python3 tests/build.py sanity
     python3 tests/build.py integration [TARGET ...]
@@ -11,9 +11,10 @@
     python3 tests/build.py testdocs [--check]
     python3 tests/build.py clean
 
-build        Writes stripped, UPX-packed binaries to plugins/modules, the same
-             way the action plugin compiles at runtime. Only linux/amd64 is
-             shipped; build other platforms only to try them out locally.
+build        Writes the stripped, UPX-packed multi-call binary, which holds
+             every module, to plugins/modules, the same way the action plugin
+             compiles at runtime. Only linux/amd64 is shipped; build other
+             platforms only to try them out locally.
 unit         go vet and go test. The Python-compatibility helpers (shlex,
              glob, $VAR expansion, regex translation...) are checked against
              results recorded from CPython in internal/ansible/testdata.
@@ -54,23 +55,21 @@ _spec.loader.exec_module(go_build)
 
 def cmd_build(args):
     platforms = [p.replace('/', '_') for p in args.platform or SHIPPED_PLATFORMS]
-    modules = args.module or go_build.modules()
 
     for platform in platforms:
         if platform in go_build.UPX_PLATFORMS and not go_build.can_pack(platform):
             # Shipped binaries must always be packed; the runtime path only warns.
             sys.exit('upx is not installed; install it to build packed binaries')
 
-    for module in modules:
-        for platform in platforms:
-            dest = os.path.join(go_build.MODULES_DIR, '%s_%s' % (module, platform))
-            try:
-                go_build.build(module, platform, dest)
-            except go_build.BuildError as e:
-                sys.exit('%s %s: %s' % (module, platform, e))
-            packed = 'packed' if go_build.can_pack(platform) else 'not packed, unsupported by upx'
-            print('%-40s %6.0f KiB  (%s)' % (os.path.relpath(dest, COLLECTION_ROOT),
-                                             os.path.getsize(dest) / 1024, packed))
+    for platform in platforms:
+        dest = os.path.join(go_build.MODULES_DIR, go_build.binary_name(platform))
+        try:
+            go_build.build(platform, dest)
+        except go_build.BuildError as e:
+            sys.exit('%s: %s' % (platform, e))
+        packed = 'packed' if go_build.can_pack(platform) else 'not packed, unsupported by upx'
+        print('%-40s %6.0f KiB  (%s)' % (os.path.relpath(dest, COLLECTION_ROOT),
+                                         os.path.getsize(dest) / 1024, packed))
 
 
 def cmd_unit(args):
@@ -104,7 +103,7 @@ def git_ignored(path):
 
 def cmd_integration(args):
     # Shipped binaries win over the source, so never test stale ones.
-    cmd_build(argparse.Namespace(platform=None, module=None))
+    cmd_build(argparse.Namespace(platform=None))
     with tempfile.TemporaryDirectory() as tmp:
         # Keep runtime compiles out of the user's cache.
         env = dict(os.environ, COMPILED_BUILTIN_CACHE_DIR=os.path.join(tmp, 'cache'))
@@ -370,10 +369,9 @@ def cmd_testdocs(args):
 
 
 def cmd_clean(args):
-    for module in go_build.modules():
-        for path in glob.glob(os.path.join(go_build.MODULES_DIR, '%s_*_*' % module)):
-            os.remove(path)
-            print('removed', os.path.relpath(path, COLLECTION_ROOT))
+    for path in glob.glob(os.path.join(go_build.MODULES_DIR, go_build.binary_name('*_*'))):
+        os.remove(path)
+        print('removed', os.path.relpath(path, COLLECTION_ROOT))
 
 
 def run(argv, **kwargs):
@@ -391,7 +389,6 @@ def main():
     p = sub.add_parser('build', help='compile modules into plugins/modules')
     p.add_argument('--platform', action='append', metavar='GOOS/GOARCH',
                    help='platform to build, repeatable (default: %s)' % ' '.join(SHIPPED_PLATFORMS))
-    p.add_argument('--module', action='append', help='module to build, repeatable (default: all)')
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser('unit', help='go vet and go test')

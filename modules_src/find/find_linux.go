@@ -1,6 +1,6 @@
 //go:build linux
 
-package main
+package find
 
 import (
 	"syscall"

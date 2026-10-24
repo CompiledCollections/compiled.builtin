@@ -1,5 +1,5 @@
 // Ping equivalent module, written in Go
-package main
+package ping
 
 import "compiled/builtin/internal/ansible"
 
@@ -7,7 +7,8 @@ type Args struct {
 	Data *string `json:"data"`
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var args Args
 	ansible.ReadArgs(&args)
 

@@ -47,8 +47,8 @@ distributions instead of side by side.
 ansible-core 2.16 or later. Only 2.21, the current release, is tested.
 The targets need no Python (except for async tasks, see below).
 
-Binaries are named `<module>_<GOOS>_<GOARCH>`, Go's names for the target
-system and architecture. The action plugin maps the target's `uname -s` and
+Every module is in one binary, `multicall_<GOOS>_<GOARCH>`, named with Go's
+names for the target system and architecture. The action plugin maps the target's `uname -s` and
 `uname -m` (or the `system` and `architecture` facts) to them:
 
 - Systems: Linux, macOS (Darwin), FreeBSD, OpenBSD, NetBSD, Solaris and AIX.
@@ -92,8 +92,7 @@ system and architecture. The action plugin maps the target's `uname -s` and
   - Response charsets beyond the lineinfile encodings are read as UTF-8.
   - `ftp://` and `file://` URLs, which urllib reads itself, aren't
     supported: the task fails and says so.
-  - Its binary is larger (about 2.3 MB packed): Go's HTTP and TLS stack.
-- **get_url** runs the uri binary, so it has uri's differences above. Its
+- **get_url** runs uri's Go code, so it has uri's differences above. Its
   `checksum` algorithms are md5, sha1, sha224, sha256, sha384 and sha512;
   Python's others (sha3, blake2) fail.
 - **copy** is the controller's own `ansible.builtin.copy` action (finding
@@ -119,8 +118,8 @@ are differences too:
 - **Free-form commands need ansible-core 2.19+.** Before that, Ansible only
   accepts `command: echo hi` for the builtin and rejects it for any other
   module when it loads the playbook. On 2.16 to 2.18, use `cmd:` or `argv:`.
-- **shell** is command run through a shell, as in ansible-core: it has no
-  binary of its own and shares command's differences below.
+- **shell** is command run through a shell, as in ansible-core: it runs
+  command's Go code and shares command's differences below.
 - **command, before 2.19:** the builtin has no `cmd` option, fails with
   `rc: 256` and "no command given" or "only command or argv can be given,
   not both", and puts the OS error in `msg` when a command can't run or
@@ -180,8 +179,10 @@ versions were tested, aren't checked any more.
 ## Layout
 
 ```
-modules_src/<module>/        Go source, one main package per module (Go
-                             projects usually call this directory cmd/)
+modules_src/<module>/        Go source, one package per module, with a Main
+modules_src/main.go          The multi-call binary: every module's Main, run
+                             by the name the action plugin passes in
+                             _compiled_module
 internal/ansible/            Shared plumbing: read args, write results, plus Go
                              versions of the Python behaviour modules rely on
                              (shlex, glob, $VAR/~ expansion, re syntax,
@@ -192,16 +193,16 @@ internal/files/              File metadata: mode, owner, attributes, SELinux,
                              file and copy)
 internal/codecs/             Text encodings by Python codec name
 plugins/modules/
-  <module>_linux_amd64       Precompiled binary (the only platform shipped)
+  multicall_linux_amd64      Precompiled binary with every module (the only
+                             platform shipped)
   <module>.meta              Makes the module name resolvable, so its docs are
                              found. Ansible ignores its content; only the name
-                             matters. (shell has only this and its .yml: it
-                             runs the command binary; get_url runs uri's;
-                             template, fetch and wait_for_connection only
-                             have action plugins)
+                             matters. (shell runs command's Go code and
+                             get_url uri's; template, fetch and
+                             wait_for_connection only have action plugins)
   <module>.yml               Sidecar docs read by ansible-doc
 plugins/action/<module>.py   Validates arguments with the builtin's argument
-                             spec, then picks, or compiles, the binary (copy,
+                             spec, then runs, or compiles, the binary (copy,
                              template, fetch and wait_for_connection run
                              ansible-core's action instead, with the compiled
                              modules swapped in)
@@ -236,16 +237,21 @@ tests/build.py               Build and test script
    one for uname-style values). A valid value for the wrong platform isn't
    caught: the binary then fails to run on the target.
 
-2. If `plugins/modules/<module>_<goos>_<goarch>` exists, it runs that.
+2. If `plugins/modules/multicall_<goos>_<goarch>` exists, it runs that,
+   naming the module to run in the `_compiled_module` argument.
 3. Otherwise it runs `go build` on the controller and caches the binary in
    `~/.cache/ansible/compiled.builtin/<source hash>/`. Set
    `COMPILED_BUILTIN_CACHE_DIR` to put the cache somewhere else. Editing the Go
    source changes the hash, so the binary is rebuilt.
 
-Binaries are built with `-trimpath -ldflags "-s -w"` (no symbol table or
-debug info), then packed with `upx --best --lzma` where UPX supports the
-platform (linux amd64, 386, arm, arm64, ppc64le). That takes them from about
-2.2 MB to about 0.9 MB.
+The binary is built with `-trimpath -ldflags "-s -w"` (no symbol table or
+debug info), then packed with `upx -9` where UPX supports the platform (linux
+amd64, 386, arm, arm64, ppc64le). That takes it from about 7.7 MB to about
+3.1 MB. Go puts its runtime and the shared code in every binary, so one
+binary for all the modules is a fifth of the size of one per module (15 MB
+packed), and keeps the collection well under Galaxy's 20 MB limit. UPX's
+default method starts faster than its LZMA one, which would save 0.7 MB but
+take about four times as long to unpack at the start of every task.
 
 Runtime compilation needs Go 1.22+ on the controller or in the execution
 environment, plus `upx` to keep binaries small. Without UPX it still works,

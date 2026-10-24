@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # GNU General Public License v2.0+ (see https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt)
-"""Compile the Go modules: go build, stripped, then packed with UPX.
+"""Compile the Go modules into one multi-call binary: go build, stripped, then
+packed with UPX.
 
 Internal to compiled.builtin: not a public API, and it can change in any release.
 
@@ -17,13 +18,18 @@ import tempfile
 
 COLLECTION_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODULES_DIR = os.path.join(COLLECTION_ROOT, 'plugins', 'modules')
-# One Go main package per module: modules_src/<module>/. (Go projects usually
-# call this cmd/; the name matters only to people, not to the Go toolchain.)
+# One Go package per module, modules_src/<module>/, and modules_src/main.go,
+# the multi-call binary that holds them all.
 SOURCE_DIR = 'modules_src'
+# The binary is <BINARY>_<goos>_<goarch>, for every module.
+BINARY = 'multicall'
 
 # -s -w drop the symbol table and DWARF debug info; -trimpath drops local paths.
 GO_BUILD_FLAGS = ['-trimpath', '-ldflags', '-s -w']
-UPX_FLAGS = ['--best', '--lzma', '-q']
+# UPX's default NRV method rather than LZMA: Ansible runs the binary once per
+# task, and LZMA's smaller file takes about four times as long to unpack at
+# each start. -9 packs within a few KB of --best in a tenth of the time.
+UPX_FLAGS = ['-9', '-q']
 
 # Platforms UPX can pack and unpack reliably. Others ship stripped but unpacked.
 UPX_PLATFORMS = {
@@ -39,18 +45,17 @@ class BuildError(Exception):
     pass
 
 
-def modules():
-    """Names of every module with Go source in modules_src/."""
-    src = os.path.join(COLLECTION_ROOT, SOURCE_DIR)
-    return sorted(d for d in os.listdir(src) if os.path.isdir(os.path.join(src, d)))
+def binary_name(platform):
+    """The binary's file name for platform ('<goos>_<goarch>')."""
+    return '%s_%s' % (BINARY, platform)
 
 
-def source_hash(module):
-    """Hash of everything that goes into a module's binary, so edits to the
-    Go source get a fresh cache entry instead of a stale binary."""
+def source_hash():
+    """Hash of everything that goes into the binary, so edits to the Go
+    source get a fresh cache entry instead of a stale binary."""
     digest = hashlib.sha256()
     paths = [os.path.join(COLLECTION_ROOT, 'go.mod'), os.path.join(COLLECTION_ROOT, 'go.sum')]
-    for top in (os.path.join(SOURCE_DIR, module), 'internal'):
+    for top in (SOURCE_DIR, 'internal'):
         for dirpath, dirnames, filenames in os.walk(os.path.join(COLLECTION_ROOT, top)):
             dirnames.sort()
             paths.extend(os.path.join(dirpath, f) for f in sorted(filenames) if f.endswith('.go'))
@@ -67,8 +72,8 @@ def can_pack(platform):
     return platform in UPX_PLATFORMS and shutil.which('upx') is not None
 
 
-def build(module, platform, dest, pack=True):
-    """Build modules_src/<module> for platform ('<goos>_<goarch>') into dest.
+def build(platform, dest, pack=True):
+    """Build the multi-call binary for platform ('<goos>_<goarch>') into dest.
 
     With pack, the binary is compressed with UPX when the platform supports it;
     callers check can_pack() first to decide what to do when UPX is missing.
@@ -78,8 +83,8 @@ def build(module, platform, dest, pack=True):
     go = shutil.which('go')
     if go is None:
         raise BuildError('Go is not installed')
-    if not os.path.isdir(os.path.join(COLLECTION_ROOT, SOURCE_DIR, module)):
-        raise BuildError('No Go source for %s in %s' % (module, os.path.join(COLLECTION_ROOT, SOURCE_DIR)))
+    if not os.path.isfile(os.path.join(COLLECTION_ROOT, SOURCE_DIR, 'main.go')):
+        raise BuildError('No Go source in %s' % os.path.join(COLLECTION_ROOT, SOURCE_DIR))
 
     goos, goarch = platform.split('_', 1)
     os.makedirs(os.path.dirname(dest), exist_ok=True)
@@ -87,7 +92,7 @@ def build(module, platform, dest, pack=True):
     os.close(fd)
     env = dict(os.environ, CGO_ENABLED='0', GOOS=goos, GOARCH=goarch)
     try:
-        _run([go, 'build'] + GO_BUILD_FLAGS + ['-o', tmp, './%s/%s' % (SOURCE_DIR, module)], env)
+        _run([go, 'build'] + GO_BUILD_FLAGS + ['-o', tmp, './%s' % SOURCE_DIR], env)
         if pack and can_pack(platform):
             # UPX refuses to overwrite its output, so pack in place.
             _run([shutil.which('upx')] + UPX_FLAGS + [tmp], env)
