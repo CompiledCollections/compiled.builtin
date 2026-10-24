@@ -4,8 +4,25 @@ compiled.builtin Release Notes
 
 .. contents:: Topics
 
-Unreleased
-==========
+v0.4.0
+======
+
+New Modules
+-----------
+
+- compiled.builtin.apk - Manage packages on Alpine Linux with apk-tools 2 or 3.
+- compiled.builtin.blockinfile - Insert, update or remove a block of
+  multi-line text surrounded by marker lines.
+- compiled.builtin.fetch - Fetch files from remote nodes.
+- compiled.builtin.find - Return a list of files based on specific criteria.
+- compiled.builtin.get_url - Download files from HTTP or HTTPS to the remote
+  server.
+- compiled.builtin.microdnf - Manage packages with microdnf on RHEL/UBI
+  minimal images, or dnf5 on Fedora minimal.
+- compiled.builtin.replace - Replace all instances of a pattern in a file.
+- compiled.builtin.template - Template a file out to a target host.
+- compiled.builtin.wait_for_connection - Wait until the remote system is
+  reachable.
 
 Major Changes
 -------------
@@ -15,6 +32,9 @@ Major Changes
   15 MB for the 13 separate ones, which keeps the collection well under
   Galaxy's 20 MB upload limit. Each task still uploads one binary, about
   2 MB more than before, and it starts faster (about 60 ms instead of 80 ms).
+- Only ansible-core 2.21 is tested now. Sanity and integration tests no longer
+  run on 2.16 to 2.20, and the sanity ignore files for those versions are
+  removed.
 
 Minor Changes
 -------------
@@ -28,6 +48,12 @@ Minor Changes
   ``docs/execution-environment.yml``. It now builds binaries for
   linux_arm64, linux_ppc64le and linux_s390x into the image, and installs
   ``upx`` so they're packed like the shipped one.
+- ``codecs.EncodeString`` reports encoding errors from the start of the text,
+  as Python does for a single write.
+- The module temporary directory is named like Python's
+  (``ansible-moduletmp-<time>-<random>``).
+- uri - ``file://`` and ``ftp://`` URLs now fail with a clear message saying
+  only http and https are supported.
 
 Bugfixes
 --------
@@ -36,47 +62,6 @@ Bugfixes
   it once; the others wait for it instead of each running ``go build``.
 - A cache directory that can't be written now fails the task with a clear
   message instead of a Python traceback.
-
-v0.4.0
-======
-
-New Modules
------------
-
-- compiled.builtin.apk - Manage packages on Alpine Linux with apk-tools 2 or 3,
-- compiled.builtin.blockinfile - Insert, update or remove a block of
-  multi-line text surrounded by marker lines.
-- compiled.builtin.fetch - Fetch files from remote nodes.
-- compiled.builtin.find - Return a list of files based on specific criteria.
-- compiled.builtin.get_url - Download files from HTTP or HTTPS to the remote
-  server.
-- compiled.builtin.microdnf - Manage packages with microdnf on RHEL/UBI
-  minimal images, or dnf5 on Fedora minimal
-- compiled.builtin.replace - Replace all instances of a pattern in a file.
-- compiled.builtin.template - Template a file out to a target host.
-- compiled.builtin.wait_for_connection - Wait until the remote system is
-  reachable.
-
-Major Changes
--------------
-
-- Only ansible-core 2.21 is tested now. Sanity and integration tests no longer
-  run on 2.16 to 2.20, and the sanity ignore files for those versions are
-  removed. 
-
-Minor Changes
--------------
-
-- ``codecs.EncodeString`` reports encoding errors from the start of the text,
-  as Python does for a single write.
-- The module temporary directory is named like Python's
-  (``ansible-moduletmp-<time>-<random>``).
-  a shared ``SwapsModules`` class, which template, fetch and
-  wait_for_connection also use.
-- uri - ``file://`` and ``ftp://`` URLs now fail with a clear message saying
-  only http and https are supported.
-  tarball (386 KB less in every install).
-
 
 Known Issues
 ------------
