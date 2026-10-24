@@ -1,4 +1,4 @@
-# Builds the collection tarball, with freshly compiled linux_amd64 binaries,
+# Builds the collection tarball, with a freshly compiled linux_amd64 binary,
 # when a version tag (v0.3.0, matching galaxy.yml's version) is pushed on
 # main, and attaches it to a GitHub release. Also publishes it to Ansible
 # Galaxy when the GALAXY_API_KEY secret is set.
@@ -48,7 +48,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - name: Build the binaries and the tarball
+      - name: Build the binary and the tarball
         run: |
           python3 tests/build.py build
           ansible-galaxy collection build --output-path "$RUNNER_TEMP/dist"

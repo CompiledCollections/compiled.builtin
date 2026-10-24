@@ -1,5 +1,5 @@
 // Slurp equivalent module, written in Go. Mirrors ansible.builtin.slurp.
-package main
+package slurp
 
 import (
 	"encoding/base64"
@@ -15,7 +15,8 @@ type Args struct {
 	Armor *bool  `json:"armor"`
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var args Args
 	ansible.ReadArgs(&args)
 

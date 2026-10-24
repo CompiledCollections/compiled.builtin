@@ -1,4 +1,4 @@
-package main
+package uri
 
 // get_url: compiled.builtin.get_url runs this binary with _get_url set, as
 // shell runs command's. It is a port of ansible.builtin.get_url, sending its

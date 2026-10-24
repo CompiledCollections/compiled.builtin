@@ -1,7 +1,7 @@
 // Code generated from CPython 3.14's mimetypes defaults. DO NOT EDIT.
 // Regenerate with the script in the comment at the end of this file.
 
-package main
+package uri
 
 // pyTypesMap is mimetypes.types_map: the standard extensions.
 var pyTypesMap = map[string]string{

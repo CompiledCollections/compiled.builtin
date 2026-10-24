@@ -4,6 +4,39 @@ compiled.builtin Release Notes
 
 .. contents:: Topics
 
+Unreleased
+==========
+
+Major Changes
+-------------
+
+- All modules are now in one multi-call binary, ``multicall_<goos>_<goarch>``,
+  instead of one binary per module. The shipped binary is 3.1 MB instead of
+  15 MB for the 13 separate ones, which keeps the collection well under
+  Galaxy's 20 MB upload limit. Each task still uploads one binary, about
+  2 MB more than before, and it starts faster (about 60 ms instead of 80 ms).
+
+Minor Changes
+-------------
+
+- The binary is packed with UPX's default method (``upx -9``) instead of
+  LZMA, which would take about four times as long to unpack at every start.
+- ``plugins/plugin_utils/_go_build.py <goos>_<goarch> ...`` builds binaries
+  into the installed collection, so an execution environment image can have
+  them ready instead of compiling them in every job.
+- The sample execution environment moves from ``examples/`` to
+  ``docs/execution-environment.yml``. It now builds binaries for
+  linux_arm64, linux_ppc64le and linux_s390x into the image, and installs
+  ``upx`` so they're packed like the shipped one.
+
+Bugfixes
+--------
+
+- Forks that need the same runtime-compiled binary at the same time now build
+  it once; the others wait for it instead of each running ``go build``.
+- A cache directory that can't be written now fails the task with a clear
+  message instead of a Python traceback.
+
 v0.4.0
 ======
 

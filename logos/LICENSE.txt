@@ -1,0 +1,2 @@
+The enclosed "Ansible Gopher mascot" is a derived work of the original Go gopher mascot by Renee French and is licensed under the Creative Commons 4.0 Attribution License.
+

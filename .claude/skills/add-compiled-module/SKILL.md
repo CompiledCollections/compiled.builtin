@@ -27,8 +27,15 @@ tests prove it, on the current ansible-core (2.21).
 - **Only `linux_amd64` is built and shipped.** Never build every platform.
   Other platforms compile at runtime; `build --platform` is only for trying
   one locally.
-- **Binaries are stripped and packed**: `-trimpath -ldflags "-s -w"` then
-  `upx --best --lzma`. `build` fails without UPX; the runtime path only warns.
+- **All modules are in one multi-call binary**, `multicall_<goos>_<goarch>`,
+  built from `modules_src`. Never go back to a binary per module: each one
+  carries Go's runtime and the shared code, and 13 of them came to 15 MB,
+  near Galaxy's 20 MB limit. The action plugin names the module to run in
+  `_compiled_module`.
+- **The binary is stripped and packed**: `-trimpath -ldflags "-s -w"` then
+  `upx -9` (UPX's default NRV method, which starts faster than LZMA; Ansible
+  starts the binary on every task). `build` fails without UPX; the runtime
+  path only warns.
 - **One `<module>.meta` per module name**, containing `{"interpreter": "none"}`.
   Ansible needs it to resolve the name and find the docs. No per-platform
   `.meta` files.
@@ -45,7 +52,8 @@ tests prove it, on the current ansible-core (2.21).
 
 | File | What it holds |
 | --- | --- |
-| `modules_src/X/main.go` | `package main`. Reads args and writes results through `internal/ansible`. Platform-specific code goes in `_linux.go`, `_bsd.go` and `_other.go` files. |
+| `modules_src/X/main.go` | `package X` with `func Main()`. Reads args and writes results through `internal/ansible`. Platform-specific code goes in `_linux.go`, `_bsd.go` and `_other.go` files. |
+| `modules_src/main.go` | Add `"X": X.Main` to `modules` (and the import). A unit test fails when a module directory is missing from it. |
 | `internal/ansible/`, `internal/files/` | Shared code. Reuse it, and add Go versions of Python behaviour here (with golden tests) instead of in the module. |
 | `plugins/action/X.py` | `class ActionModule(GoModuleAction)` with the builtin's `argument_spec` copied exactly (plus `**FILE_COMMON_ARGUMENTS` for file modules). Use `type='str'` for `path` options: paths are expanded on the target. |
 | `plugins/modules/X.meta` | `{"interpreter": "none"}` |
@@ -66,9 +74,9 @@ Other shapes a module can take:
   first and map the `ansible.legacy.*` modules it calls to compiled ones in
   `compiled`. No Go source; the `.meta` and `.yml` are still needed.
 - **Two modules share most of their code** (shell and command, get_url and
-  uri): set `module_binary` to the other binary, and pass what tells them
-  apart in `binary_args`, which is added after validation so it never shows
-  in validation errors.
+  uri): set `module_binary` to the other module's name, and pass what tells
+  them apart in `binary_args`, which is added after validation so it never
+  shows in validation errors.
 - **No builtin to match** (apk, microdnf): there is nothing to compare
   with, so the target has `tasks/cases.yml` steps that check outcomes in
   containers (depend on `setup_podman` in `meta/main.yml`, start them with
@@ -136,6 +144,12 @@ tarball. Module sources, `internal/` and `go.mod`
 must stay in, because runtime compilation needs them. After changing
 packaging, build the tarball, install it, delete the shipped binary, and
 check that a task still compiles it and runs.
+
+`_go_build.py` has no Ansible imports and runs as a script
+(`_go_build.py <goos>_<goarch> ...`): `docs/execution-environment.yml`
+uses it to build binaries into an EE image. Keep both working when changing
+the build. Runtime builds go through `build_once`, which holds a lock so
+forks don't compile the same binary at once.
 
 ## Commits
 

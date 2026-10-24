@@ -2,7 +2,7 @@
 // ansible.builtin.replace; regexp, after and before use Python regular
 // expression syntax, translated to Go's RE2 engine, and replace is a Python
 // replacement template (see internal/ansible/pyre.go).
-package main
+package replace
 
 import (
 	"errors"
@@ -93,7 +93,8 @@ func writeChanges(contents, path string) {
 	}
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	path := ansible.ExpandPath(args.Path)
 	res := ansible.Result{"rc": 0}
