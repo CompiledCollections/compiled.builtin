@@ -8,14 +8,15 @@ description: Add or change a compiled.builtin module, a Go replacement for an an
 The goal is always **full parity with `ansible.builtin.<module>`**: the same
 options, aliases, types, defaults, choices, results, check mode, diff mode,
 warnings and error messages. A change isn't done until the side-by-side
-tests prove it, on every supported ansible-core version.
+tests prove it, on the current ansible-core (2.21).
 
 ## Fixed decisions (don't revisit them)
 
 - **One behaviour: current ansible-core's (2.21).** The modules behave like
-  the newest builtin whatever version runs them. Where you know an older
-  builtin differs, list it under "On ansible-core older than 2.21" in
-  `README.md`. Never add version-dependent behaviour to a module.
+  the newest builtin whatever version runs them. Older cores aren't tested,
+  so only when the builtin's source shows that an older version differs,
+  list it under "On ansible-core older than 2.21" in `README.md`. Never add
+  version-dependent behaviour to a module.
 - **Only the current ansible-core (2.21) is tested.** The collection still
   declares `requires_ansible: '>=2.16.0'` (what AAP 2.5 ships), so keep docs
   and argument specs loadable on 2.16: no doc fragments or options newer
@@ -49,9 +50,10 @@ tests prove it, on every supported ansible-core version.
 | `plugins/action/X.py` | `class ActionModule(GoModuleAction)` with the builtin's `argument_spec` copied exactly (plus `**FILE_COMMON_ARGUMENTS` for file modules). Use `type='str'` for `path` options: paths are expanded on the target. |
 | `plugins/modules/X.meta` | `{"interpreter": "none"}` |
 | `plugins/modules/X.yml` | `DOCUMENTATION`, `EXAMPLES` and `RETURN` from the current builtin, renamed to `compiled.builtin.X`. Remove `version_added` from options (they're core versions, not collection versions), inline doc fragments 2.16 doesn't have, and describe every attribute. |
-| `tests/integration/targets/X/` | `aliases` (`shippable/posix/group1`, `context/target`), `tasks/main.yml`, `tasks/compare.yml`, `vars/main.yml` |
+| `tests/integration/targets/X/` | `aliases` (`shippable/posix/group1`, `context/target`; `context/controller` for container targets), `tasks/main.yml`, `tasks/compare.yml`, `vars/main.yml` |
 | `tests/sanity/ignore-2.21.txt` | Add `plugins/modules/X.meta validate-modules!skip` and the `X.yml` license line, keeping each file sorted. Don't add the binary: it's gitignored, and ansible-test doesn't see it. |
 | `README.md` | Module table, any differences from the builtin, the pre-2.21 list, and the layout section if it changes. |
+| `CHANGELOG.rst` | An entry in the unreleased version's section: the module under New Modules, other changes under their headings. It's edited by hand; don't add antsibull-changelog fragments. |
 
 When an action plugin runs a compiled module more than once in a task (as
 copy does with stat), go through `_execute_compiled`/`_execute_binary`.
@@ -69,8 +71,10 @@ Other shapes a module can take:
   in validation errors.
 - **No builtin to match** (apk, microdnf): there is nothing to compare
   with, so the target has `tasks/cases.yml` steps that check outcomes in
-  containers (depend on `setup_podman`, start them with its `start.yml`, run
-  with `delegate_to`, check with `raw`). testdocs lists these steps.
+  containers (depend on `setup_podman` in `meta/main.yml`, start them with
+  its `start.yml`, run with `delegate_to`, check with `raw`). Its `aliases`
+  use `context/controller`, since the containers are started from the
+  controller. testdocs lists these steps.
 
 ## Porting behaviour
 
@@ -126,8 +130,9 @@ python3 tests/build.py integration X        # builds linux_amd64 first
 
 ## Packaging
 
-`galaxy.yml` `build_ignore` keeps tests, `*_test.go`, `testdata`, `.github`
-and `.claude` out of the tarball. Module sources, `internal/` and `go.mod`
+`galaxy.yml` `build_ignore` keeps `tests`, `*_test.go`, `*/testdata`,
+`.gitignore`, `.github`, `.claude`, `*.tar.gz` and `logos` out of the
+tarball. Module sources, `internal/` and `go.mod`
 must stay in, because runtime compilation needs them. After changing
 packaging, build the tarball, install it, delete the shipped binary, and
 check that a task still compiles it and runs.
@@ -135,5 +140,19 @@ check that a task still compiles it and runs.
 ## Commits
 
 Make small, separate commits with messages that explain why. Don't push
-unless asked. Work happens on `dev` and is promoted to `main` through pull
-requests.
+unless asked.
+
+- Start a feature branch from `dev`. Its pull request is squashed into `dev`.
+- `dev` is promoted to `main` through a pull request merged with a merge
+  commit.
+
+## Releasing
+
+- Set `galaxy.yml`'s `version` for the next release: Galaxy never accepts a
+  version twice. While the collection is 0.x, new modules or features raise
+  the minor version (0.3.1 to 0.4.0) and fixes the patch version.
+- Give the unreleased section of `CHANGELOG.rst` that version.
+- After `dev` is merged into `main`, tag `vX.Y.Z` on `main`. The release
+  workflow fails if the tag doesn't match `galaxy.yml`'s version; otherwise
+  it builds the collection, attaches it to a GitHub release and publishes it
+  to Galaxy.
