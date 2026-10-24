@@ -271,7 +271,7 @@ class CompiledModules:
                                 'will not be compressed' % platform)
             display.vv('compiled.builtin: compiling the modules for %s into %s' % (platform, dest))
             try:
-                go_build.build(platform, dest)
+                go_build.build_once(platform, dest)
             except go_build.BuildError as e:
                 return None, 'No precompiled binary for %s, and compiling it failed: %s' % (platform, e)
 

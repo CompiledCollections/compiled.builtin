@@ -21,6 +21,21 @@ Minor Changes
 
 - The binary is packed with UPX's default method (``upx -9``) instead of
   LZMA, which would take about four times as long to unpack at every start.
+- ``plugins/plugin_utils/_go_build.py <goos>_<goarch> ...`` builds binaries
+  into the installed collection, so an execution environment image can have
+  them ready instead of compiling them in every job.
+- The sample execution environment moves from ``examples/`` to
+  ``docs/execution-environment.yml``. It now builds binaries for
+  linux_arm64, linux_ppc64le and linux_s390x into the image, and installs
+  ``upx`` so they're packed like the shipped one.
+
+Bugfixes
+--------
+
+- Forks that need the same runtime-compiled binary at the same time now build
+  it once; the others wait for it instead of each running ``go build``.
+- A cache directory that can't be written now fails the task with a clear
+  message instead of a Python traceback.
 
 v0.4.0
 ======

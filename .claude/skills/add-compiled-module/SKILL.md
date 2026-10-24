@@ -145,6 +145,12 @@ must stay in, because runtime compilation needs them. After changing
 packaging, build the tarball, install it, delete the shipped binary, and
 check that a task still compiles it and runs.
 
+`_go_build.py` has no Ansible imports and runs as a script
+(`_go_build.py <goos>_<goarch> ...`): `docs/execution-environment.yml`
+uses it to build binaries into an EE image. Keep both working when changing
+the build. Runtime builds go through `build_once`, which holds a lock so
+forks don't compile the same binary at once.
+
 ## Commits
 
 Make small, separate commits with messages that explain why. Don't push

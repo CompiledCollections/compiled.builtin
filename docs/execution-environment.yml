@@ -1,0 +1,47 @@
+---
+# Sample execution environment with compiled.builtin, for ansible-builder 3:
+#
+#   ansible-builder build -f execution-environment.yml -t compiled-builtin-ee
+#
+# Go comes in through the collection's meta/bindep.txt; it's only used for
+# targets other than linux_amd64, whose binary ships with the collection.
+version: 3
+
+images:
+  base_image:
+    name: registry.fedoraproject.org/fedora-minimal:44
+
+dependencies:
+  # Fedora minimal has no Python
+  python_interpreter:
+    package_system: python3
+    python_path: /usr/bin/python3
+  ansible_core:
+    package_pip: ansible-core~=2.21.0
+  ansible_runner:
+    package_pip: ansible-runner
+  galaxy:
+    collections:
+      - name: compiled.builtin
+  # Packs the binaries built below, as the shipped one is
+  system:
+    - upx [platform:rpm]
+
+additional_build_steps:
+  # A job's container is thrown away when the job ends, and with it any
+  # binary the action plugins compiled for it, so every job would compile
+  # again. Building the binaries for the other platforms you manage into the
+  # image avoids that: the action plugins find them as shipped ones. Go's
+  # build cache is only needed while building.
+  append_final:
+    - >-
+      RUN GOCACHE=/tmp/go-build python3
+      /usr/share/ansible/collections/ansible_collections/compiled/builtin/plugins/plugin_utils/_go_build.py
+      linux_arm64 linux_ppc64le linux_s390x
+      && rm -rf /tmp/go-build
+
+options:
+  # dnf and microdnf are both links to dnf5 on Fedora minimal
+  package_manager_path: /usr/bin/dnf5
+  tags:
+    - compiled-builtin-ee

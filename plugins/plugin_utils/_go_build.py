@@ -5,15 +5,21 @@ packed with UPX.
 
 Internal to compiled.builtin: not a public API, and it can change in any release.
 
-Kept free of Ansible imports so tests/build.py can load it directly.
+Kept free of Ansible imports so tests/build.py can load it directly. Run as a
+script, it builds binaries into the collection, for an execution environment
+to have them ready instead of compiling them in every job:
+
+    python3 plugins/plugin_utils/_go_build.py linux_arm64 linux_ppc64le
 """
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 
 COLLECTION_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -87,8 +93,11 @@ def build(platform, dest, pack=True):
         raise BuildError('No Go source in %s' % os.path.join(COLLECTION_ROOT, SOURCE_DIR))
 
     goos, goarch = platform.split('_', 1)
-    os.makedirs(os.path.dirname(dest), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), prefix='.build-')
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(dest), prefix='.build-')
+    except OSError as e:
+        raise BuildError('cannot write to %s: %s' % (os.path.dirname(dest), e.strerror))
     os.close(fd)
     env = dict(os.environ, CGO_ENABLED='0', GOOS=goos, GOARCH=goarch)
     try:
@@ -103,9 +112,44 @@ def build(platform, dest, pack=True):
             os.remove(tmp)
 
 
+def build_once(platform, dest, pack=True):
+    """build(), unless dest is already there. A lock next to dest makes forks
+    that need the same binary at the same time build it once: the others wait
+    for it instead of each running their own go build. Raises BuildError."""
+    try:
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        lock = open(dest + '.lock', 'w')
+    except OSError as e:
+        raise BuildError('cannot write to %s: %s' % (os.path.dirname(dest), e.strerror))
+    with lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not os.path.isfile(dest):
+            build(platform, dest, pack)
+
+
 def _run(argv, env):
     proc = subprocess.run(argv, cwd=COLLECTION_ROOT, env=env, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
         raise BuildError('%s failed: %s' % (
             os.path.basename(argv[0]),
             proc.stderr.strip() or proc.stdout.strip() or 'exit code %d' % proc.returncode))
+
+
+def main(platforms):
+    """Build the binary for each platform into plugins/modules, where the
+    action plugins find it as a shipped one."""
+    if not platforms:
+        sys.exit('usage: %s <goos>_<goarch> ...' % os.path.basename(sys.argv[0]))
+    for platform in platforms:
+        if platform in UPX_PLATFORMS and not can_pack(platform):
+            print('upx is not installed, so the binary for %s will not be compressed' % platform)
+        dest = os.path.join(MODULES_DIR, binary_name(platform))
+        try:
+            build(platform, dest)
+        except BuildError as e:
+            sys.exit('%s: %s' % (platform, e))
+        print('%s %.0f KiB' % (dest, os.path.getsize(dest) / 1024))
+
+
+if __name__ == '__main__':
+    main(sys.argv[1:])

@@ -207,6 +207,12 @@ plugins/action/<module>.py   Validates arguments with the builtin's argument
                              ansible-core's action instead, with the compiled
                              modules swapped in)
 plugins/plugin_utils/        Shared action plugin and build code
+meta/                        runtime.yml, plus execution-environment.yml and
+                             bindep.txt, which add Go to execution
+                             environments that include the collection
+docs/execution-environment.yml
+                             Sample ansible-builder 3 definition that builds
+                             the binaries for more platforms into the image
 tests/integration/targets/   Side-by-side tests against ansible.builtin (and
                              container tests for apk and microdnf)
 tests/build.py               Build and test script
@@ -242,7 +248,9 @@ tests/build.py               Build and test script
 3. Otherwise it runs `go build` on the controller and caches the binary in
    `~/.cache/ansible/compiled.builtin/<source hash>/`. Set
    `COMPILED_BUILTIN_CACHE_DIR` to put the cache somewhere else. Editing the Go
-   source changes the hash, so the binary is rebuilt.
+   source changes the hash, so the binary is rebuilt. It's built once per
+   platform: forks that need it at the same time wait for the first one's
+   build (about 20 s) instead of each running their own.
 
 The binary is built with `-trimpath -ldflags "-s -w"` (no symbol table or
 debug info), then packed with `upx -9` where UPX supports the platform (linux
@@ -256,6 +264,24 @@ take about four times as long to unpack at the start of every task.
 Runtime compilation needs Go 1.22+ on the controller or in the execution
 environment, plus `upx` to keep binaries small. Without UPX it still works,
 but warns and uses the bigger uncompressed binary.
+
+### In an execution environment
+
+The collection's `meta/bindep.txt` adds Go to execution environments built
+with ansible-builder. But a job's container is thrown away when the job
+ends, and the binaries compiled for it with it, so every job would compile
+them again. Build the binaries for the platforms you manage into the image
+instead:
+
+```
+python3 <collection>/plugins/plugin_utils/_go_build.py linux_arm64 linux_ppc64le
+```
+
+writes `multicall_<platform>` into the installed collection's
+`plugins/modules/`, where the action plugins find it as a shipped binary.
+[docs/execution-environment.yml](docs/execution-environment.yml)
+does this in an ansible-builder 3 build step. Alternatively, point
+`COMPILED_BUILTIN_CACHE_DIR` at a directory that's kept between jobs.
 
 ## Building and testing
 
