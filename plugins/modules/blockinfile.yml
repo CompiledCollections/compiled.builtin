@@ -1,0 +1,182 @@
+DOCUMENTATION:
+  module: blockinfile
+  short_description: Insert/update/remove a text block surrounded by marker lines
+  description:
+    - Compiled Go replacement for M(ansible.builtin.blockinfile), with the same options and results.
+      It does not need Python on the target.
+    - This module will insert/update/remove a block of multi-line text surrounded by customizable marker lines.
+  version_added: 1.0.0
+  options:
+    path:
+      description:
+        - The file to modify.
+      type: path
+      required: true
+      aliases: [dest, destfile, name]
+    state:
+      description:
+        - Whether the block should be there or not.
+      type: str
+      choices: [absent, present]
+      default: present
+    marker:
+      description:
+        - The marker line template.
+        - C({mark}) will be replaced with the values in O(marker_begin) (default=C(BEGIN)) and O(marker_end) (default=C(END)).
+        - Using a custom marker without the C({mark}) variable may result in the block being repeatedly inserted on subsequent playbook runs.
+        - Multi-line markers are not supported and will result in the block being repeatedly inserted on subsequent playbook runs.
+        - A newline is automatically appended by the module to O(marker_begin) and O(marker_end).
+      type: str
+      default: '# {mark} ANSIBLE MANAGED BLOCK'
+    block:
+      description:
+        - The text to insert inside the marker lines.
+        - If it is missing or an empty string, the block will be removed as if O(state) were specified to V(absent).
+      type: str
+      default: ''
+      aliases: [content]
+    insertafter:
+      description:
+        - If specified and no begin/ending O(marker) lines are found, the block will be inserted after the last match of specified regular expression.
+        - A special value is available; V(EOF) for inserting the block at the end of the file.
+        - If specified regular expression has no matches or no value is passed, V(EOF) will be used instead.
+        - The presence of the multiline flag (?m) in the regular expression controls whether the match is done line by line or with multiple lines.
+        - Uses Python regular expression syntax, run by Go's RE2 engine. Unicode classes, C($), C(\Z) and escapes behave as in Python.
+          Lookahead and lookbehind assertions, backreferences inside the pattern, conditional groups and verbose mode are not available
+          and make the task fail.
+      type: str
+    insertbefore:
+      description:
+        - If specified and no begin/ending O(marker) lines are found, the block will be inserted before the last match of specified regular expression.
+        - A special value is available; V(BOF) for inserting the block at the beginning of the file.
+        - If specified regular expression has no matches, the block will be inserted at the end of the file.
+        - The presence of the multiline flag (?m) in the regular expression controls whether the match is done line by line or with multiple lines.
+        - Uses the same regular expression syntax as O(insertafter).
+      type: str
+    create:
+      description:
+        - Create a new file if it does not exist.
+      type: bool
+      default: false
+    backup:
+      description:
+        - Create a backup file including the timestamp information so you can
+          get the original file back if you somehow clobbered it incorrectly.
+      type: bool
+      default: false
+    marker_begin:
+      description:
+        - This will be inserted at C({mark}) in the opening ansible block O(marker).
+      type: str
+      default: BEGIN
+    marker_end:
+      description:
+        - This will be inserted at C({mark}) in the closing ansible block O(marker).
+      type: str
+      default: END
+    append_newline:
+      description:
+        - Append a blank line to the inserted block, if this does not appear at the end of the file.
+        - Note that this attribute is not considered when C(state) is set to C(absent)
+      type: bool
+      default: false
+    prepend_newline:
+      description:
+        - Prepend a blank line to the inserted block, if this does not appear at the beginning of the file.
+        - Note that this attribute is not considered when C(state) is set to C(absent)
+      type: bool
+      default: false
+    encoding:
+      description:
+        - The character set in which the target file is encoded.
+        - Supported are UTF-8 (with or without a BOM), ASCII, Latin-1, Windows-1252, UTF-16 and UTF-32.
+      type: str
+      default: utf-8
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+    - ansible.builtin.action_common_attributes.files
+    - ansible.builtin.files
+    - ansible.builtin.validate
+  attributes:
+    check_mode:
+      support: full
+    diff_mode:
+      support: full
+    platform:
+      platforms: posix
+    safe_file_operations:
+      description: Uses Ansible's mechanism to safely write files, keeping ownership, mode and SELinux context.
+      support: full
+    vault:
+      description: Can automatically decrypt Ansible vaulted files.
+      support: none
+  notes:
+    - When using C(with_*) loops be aware that if you do not set a unique mark the block will be overwritten on each iteration.
+    - When more than one block should be handled in one file you must change the O(marker) per task.
+    - SELinux contexts are read and set through extended attributes; default contexts (V(_default)) need C(matchpathcon) on the target.
+    - File attributes need C(lsattr) and C(chattr) on the target, as for M(ansible.builtin.blockinfile).
+  seealso:
+    - module: ansible.builtin.blockinfile
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Insert/Update "Match User" configuration block in /etc/ssh/sshd_config prepending and appending a new line
+    compiled.builtin.blockinfile:
+      path: /etc/ssh/sshd_config
+      append_newline: true
+      prepend_newline: true
+      block: |
+        Match User ansible-agent
+        PasswordAuthentication no
+
+  - name: Insert/Update eth0 configuration stanza in /etc/network/interfaces
+          (it might be better to copy files into /etc/network/interfaces.d/)
+    compiled.builtin.blockinfile:
+      path: /etc/network/interfaces
+      block: |
+        iface eth0 inet static
+            address 192.0.2.23
+            netmask 255.255.255.0
+
+  - name: Insert/Update configuration using a local file and validate it
+    compiled.builtin.blockinfile:
+      block: "{{ lookup('ansible.builtin.file', './local/sshd_config') }}"
+      path: /etc/ssh/sshd_config
+      backup: true
+      validate: /usr/sbin/sshd -T -f %s
+
+  - name: Insert/Update HTML surrounded by custom markers after <body> line
+    compiled.builtin.blockinfile:
+      path: /var/www/html/index.html
+      marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+      insertafter: "<body>"
+      block: |
+        <h1>Welcome to {{ ansible_hostname }}</h1>
+        <p>Last updated on {{ ansible_date_time.iso8601 }}</p>
+
+  - name: Remove HTML as well as surrounding markers
+    compiled.builtin.blockinfile:
+      path: /var/www/html/index.html
+      marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"
+      block: ""
+
+  - name: Add mappings to /etc/hosts
+    compiled.builtin.blockinfile:
+      path: /etc/hosts
+      block: |
+        {{ item.ip }} {{ item.name }}
+      marker: "# {mark} ANSIBLE MANAGED BLOCK {{ item.name }}"
+    loop:
+      - {name: host1, ip: 10.10.1.10}
+      - {name: host2, ip: 10.10.1.11}
+      - {name: host3, ip: 10.10.1.12}
+
+  - name: Search with a multiline search flags regex and if found insert after
+    compiled.builtin.blockinfile:
+      path: listener.ora
+      block: "{{ listener_line | indent(width=8, first=True) }}"
+      insertafter: '(?m)SID_LIST_LISTENER_DG =\n.*\(SID_LIST ='
+      marker: "    <!-- {mark} ANSIBLE MANAGED BLOCK -->"
+
+RETURN: {}

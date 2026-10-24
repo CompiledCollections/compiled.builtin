@@ -1,0 +1,29 @@
+# What the compiled module can't do fails the task and says why: GSSAPI
+# needs the Python gssapi library, only http and https URLs are supported,
+# and checksums only use md5, sha1 and SHA-2 (not Python's sha3 and blake2).
+# Only the compiled module runs.
+- name: Unsupported features
+  compiled.builtin.get_url:
+    url: "{{ item.url }}"
+    dest: "{{ dest_dir }}/unsupported.txt"
+    use_gssapi: "{{ item.use_gssapi | default(false) }}"
+    checksum: "{{ item.checksum | default(omit) }}"
+  register: unsupported
+  ignore_errors: true
+  loop:
+    - {url: "{{ http_url }}/download/a.txt", use_gssapi: true, says: gssapi}
+    - {url: "file:///etc/hostname", says: 'file:// URLs are not supported by compiled.builtin.get_url'}
+    - {url: "ftp://127.0.0.1/file.txt", says: 'ftp:// URLs are not supported by compiled.builtin.get_url'}
+    - {url: "{{ http_url }}/download/a.txt", checksum: "sha3_256:{{ a_sha256 }}", says: 'Available algorithms: md5, sha1, sha224, sha256, sha384, sha512'}
+  loop_control:
+    label: "{{ item.url }}"
+
+- name: Each fails and says why
+  ansible.builtin.assert:
+    that:
+      - item is failed
+      - item.msg is search(item.item.says)
+    fail_msg: "{{ item | to_json }}"
+  loop: "{{ unsupported.results }}"
+  loop_control:
+    label: "{{ item.item.url }}"

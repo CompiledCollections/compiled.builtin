@@ -58,12 +58,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Only the current ansible-core is tested.
         include: &versions
-          - {ansible: '2.16', python: '3.12'}
-          - {ansible: '2.17', python: '3.12'}
-          - {ansible: '2.18', python: '3.12'}
-          - {ansible: '2.19', python: '3.12'}
-          - {ansible: '2.20', python: '3.12'}
           - {ansible: '2.21', python: '3.14'}
     defaults:
       run:
@@ -105,6 +101,9 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y "$UPX_PACKAGE"
       - name: Install ansible-core ${{ matrix.ansible }}
         run: python3 -m pip install "ansible-core~=${{ matrix.ansible }}.0"
+      # The apk and microdnf targets run in containers; the runner image has podman.
+      - name: Check podman
+        run: podman --version
       - name: Build, then ansible-test integration
         run: python3 tests/build.py integration
       - name: Keep the test output when it fails

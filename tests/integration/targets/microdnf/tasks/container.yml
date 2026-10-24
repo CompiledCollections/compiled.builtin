@@ -1,0 +1,19 @@
+- name: Run the cases
+  block:
+    - ansible.builtin.include_role:
+        name: setup_podman
+        tasks_from: start
+      vars:
+        container: "{{ target.container }}"
+        image: "{{ target.image }}"
+
+    - name: Cases
+      ansible.builtin.include_tasks: cases.yml
+      vars:
+        container: "{{ target.container }}"
+  always:
+    - ansible.builtin.include_role:
+        name: setup_podman
+        tasks_from: stop
+      vars:
+        container: "{{ target.container }}"

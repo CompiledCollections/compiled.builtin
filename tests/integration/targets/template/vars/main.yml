@@ -1,0 +1,137 @@
+tpl_dir: "{{ output_dir }}/template"
+dest: "{{ tpl_dir }}/dest"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+
+# Each case starts from the tree tasks/prepare.yml makes in tpl_dir (plus
+# any shell `setup`), runs ansible.builtin.template and
+# compiled.builtin.template with `args`, and compares the results and the
+# files left behind. Templates are in templates/; `greeting` (default
+# "world") is a variable they use. Diff mode is on unless `diff: false`.
+# Times from the run itself read NOW. `compare: failed` only compares
+# whether the task failed.
+template_cases:
+  # Rendering
+  - name: template to a new file
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt"}
+  - name: template unchanged
+    args: {src: hello.j2, dest: "{{ dest }}/same.txt"}
+  - name: template replacing a file
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt"}
+  - name: template with a variable
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt"}
+    greeting: there
+  - name: template with an include
+    args: {src: include.j2, dest: "{{ dest }}/new.txt"}
+  - name: unicode template
+    args: {src: unicode.j2, dest: "{{ dest }}/new.txt"}
+  - name: template variables about the template
+    args: {src: magic.j2, dest: "{{ dest }}/new.txt"}
+  - name: template to a directory
+    args: {src: hello.j2, dest: "{{ dest }}/dir"}
+  - name: template to a directory with a trailing slash
+    args: {src: hello.j2, dest: "{{ dest }}/dir/"}
+  - name: template to a missing directory
+    args: {src: hello.j2, dest: "{{ dest }}/missing/new.txt"}
+  - name: template with an absolute path to the source
+    args: {src: "{{ role_path }}/templates/hello.j2", dest: "{{ dest }}/new.txt"}
+
+  # Template options
+  - name: trim_blocks off
+    args: {src: blocks.j2, dest: "{{ dest }}/new.txt", trim_blocks: false}
+  - name: lstrip_blocks on
+    args: {src: blocks.j2, dest: "{{ dest }}/new.txt", lstrip_blocks: true}
+  - name: custom delimiters
+    args:
+      src: custom.j2
+      dest: "{{ dest }}/new.txt"
+      variable_start_string: "<<"
+      variable_end_string: ">>"
+      block_start_string: "[%"
+      block_end_string: "%]"
+      comment_start_string: "[#"
+      comment_end_string: "#]"
+  - name: windows newline sequence
+    args: {src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "\r\n"}
+  - name: old mac newline sequence
+    args: {src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "\r"}
+  - name: invalid newline sequence
+    args: {src: lines.j2, dest: "{{ dest }}/new.txt", newline_sequence: "x"}
+  - name: latin-1 output encoding
+    args: {src: latin.j2, dest: "{{ dest }}/new.txt", output_encoding: latin-1}
+  - name: utf-16 output encoding
+    args: {src: latin.j2, dest: "{{ dest }}/new.txt", output_encoding: utf-16}
+
+  # Copy options
+  - name: mode
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", mode: "0600"}
+  - name: symbolic mode
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt", mode: "u=rw,g=,o="}
+  - name: mode preserve
+    args: {src: script.sh.j2, dest: "{{ dest }}/new.txt", mode: preserve}
+  - name: only the mode changes
+    args: {src: same.j2, dest: "{{ dest }}/same.txt", mode: "0600"}
+  - name: invalid mode
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", mode: "abc"}
+  - name: backup
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt", backup: true}
+  - name: backup when unchanged
+    args: {src: same.j2, dest: "{{ dest }}/same.txt", backup: true}
+  - name: force off keeps an existing file
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt", force: false}
+  - name: force off writes a new file
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", force: false}
+  - name: follow a link
+    args: {src: hello.j2, dest: "{{ dest }}/link.txt", follow: true}
+  - name: replace a link
+    args: {src: hello.j2, dest: "{{ dest }}/link.txt"}
+  - name: owner
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", owner: "{{ current_user }}"}
+  - name: unknown owner
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", owner: no_such_user_xyz}
+  - name: group
+    args: {src: same.j2, dest: "{{ dest }}/same.txt", group: "{{ other_group }}"}
+  - name: unknown group
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", group: no_such_group_xyz}
+  - name: validate passes
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", validate: "grep -q hello %s"}
+  - name: validate fails
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", validate: "grep -q zzz %s"}
+  - name: validate without %s
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", validate: "true"}
+  - name: unsafe_writes is accepted
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt", unsafe_writes: true}
+  - name: path with variables is expanded on the target
+    args: {src: hello.j2, dest: "$TPL_DEST/new.txt"}
+    environment: {TPL_DEST: "{{ dest }}"}
+
+  # Check and diff modes
+  - name: check mode with a new file
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt"}
+    check_mode: true
+  - name: check mode with a change
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt"}
+    check_mode: true
+  - name: check mode without a change
+    args: {src: same.j2, dest: "{{ dest }}/same.txt"}
+    check_mode: true
+  - name: diff mode off
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt"}
+    diff: false
+
+  # Errors
+  - name: missing source template
+    args: {src: no-such.j2, dest: "{{ dest }}/new.txt"}
+  - name: undefined variable
+    args: {src: undefined.j2, dest: "{{ dest }}/new.txt"}
+  - name: template syntax error
+    args: {src: syntax.j2, dest: "{{ dest }}/new.txt"}
+  - name: src is required
+    args: {dest: "{{ dest }}/new.txt"}
+  - name: dest is required
+    args: {src: hello.j2}
+  - name: unsupported option
+    args: {src: hello.j2, dest: "{{ dest }}/new.txt", bogus: true}
+  - name: dest is a file in a file
+    args: {src: hello.j2, dest: "{{ dest }}/old.txt/new.txt"}

@@ -316,6 +316,29 @@ class CompiledModules:
         return platform, detected
 
 
+class SwapsModules(CompiledModules):
+    """Mixed into an ansible.builtin action plugin (listed first) so that its
+    calls to Python modules run compiled modules instead. ``compiled`` maps
+    the name the builtin action calls, such as ``ansible.legacy.stat``, to
+    the compiled module and its argument spec."""
+
+    compiled = {}
+
+    def run(self, tmp=None, task_vars=None):
+        result = super(SwapsModules, self).run(tmp, task_vars)
+        return self._add_platform_fact(result)
+
+    def _execute_module(self, module_name=None, module_args=None, task_vars=None, **kwargs):
+        if module_name not in self.compiled:
+            return super(SwapsModules, self)._execute_module(
+                module_name=module_name, module_args=module_args, task_vars=task_vars, **kwargs)
+        module, argument_spec = self.compiled[module_name]
+        if module_args is None:
+            module_args = self._task.args.copy()
+        return self._execute_compiled(module, module_args, task_vars or {}, argument_spec,
+                                      name='%s.%s' % (COLLECTION, module), **kwargs)
+
+
 class GoModuleAction(CompiledModules, ActionBase):
     """Base for the modules' action plugins.
 
@@ -332,6 +355,9 @@ class GoModuleAction(CompiledModules, ActionBase):
 
     # The binary to run, when not the one named after the action (shell runs command).
     module_binary = None
+    # Internal arguments for that binary, added after validation so they don't
+    # show in validation errors (get_url runs uri with _get_url).
+    binary_args = None
     # The module named in validation errors, when not this action.
     validation_name = None
 
@@ -369,7 +395,7 @@ class GoModuleAction(CompiledModules, ActionBase):
         wrap_async = self._task.async_val and not self._connection.has_native_async
         module_result = self._execute_module(
             module_name=binary,
-            module_args=module_args,
+            module_args=dict(module_args, **self.binary_args) if self.binary_args else module_args,
             task_vars=task_vars,
             wrap_async=wrap_async,
         )

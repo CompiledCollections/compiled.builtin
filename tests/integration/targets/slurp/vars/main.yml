@@ -2,11 +2,6 @@ slurp_dir: "{{ output_dir }}/slurp"
 
 # Each case runs ansible.builtin.slurp and compiled.builtin.slurp with the
 # same arguments; the results must match. The files are made by tasks/main.yml.
-#
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 slurp_cases:
   # Content
   - name: text file
@@ -25,16 +20,12 @@ slurp_cases:
   # armor
   - name: armor false on text
     args: {src: "{{ slurp_dir }}/unicode.txt", armor: false}
-    builtin_differs: {before: "2.21", why: 'it has no armor option'}
   - name: armor false on binary
     args: {src: "{{ slurp_dir }}/binary.bin", armor: false}
-    builtin_differs: {before: "2.21", why: 'it has no armor option'}
   - name: armor true
     args: {src: "{{ slurp_dir }}/text.txt", armor: true}
-    builtin_differs: {before: "2.21", why: 'it has no armor option'}
   - name: armor as a string
     args: {src: "{{ slurp_dir }}/text.txt", armor: "no"}
-    builtin_differs: {before: "2.21", why: 'it has no armor option'}
 
   # Paths
   - name: path alias
@@ -48,25 +39,19 @@ slurp_cases:
     args: {src: "{{ slurp_dir }}/link.txt"}
   - name: relative path is not found in the home directory
     args: {src: "relative.txt"}
-    builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
 
   # Errors
   - name: missing file
     args: {src: "{{ slurp_dir }}/missing.txt"}
-    builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
   - name: directory
     args: {src: "{{ slurp_dir }}"}
-    builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
   - name: unreadable file
     args: {src: "{{ slurp_dir }}/unreadable.txt"}
     # Only fails when not run as root: root reads it anyway.
-    builtin_differs: {before: "2.19", why: 'its messages start in lowercase'}
   - name: symlink loop
     args: {src: "{{ slurp_dir }}/loop"}
-    builtin_differs: {before: "2.19", why: 'its message starts in lowercase and names the OS error instead of a literal {source}'}
   - name: file under a regular file
     args: {src: "{{ slurp_dir }}/text.txt/child"}
-    builtin_differs: {before: "2.19", why: 'its message starts in lowercase and names the OS error instead of a literal {source}'}
 
   # Modes and arguments
   - name: check mode
@@ -76,4 +61,3 @@ slurp_cases:
     args: {}
   - name: unsupported option
     args: {src: "{{ slurp_dir }}/text.txt", bogus: 1}
-    builtin_differs: {before: "2.21", why: 'it has no armor option, so the supported options listed differ'}

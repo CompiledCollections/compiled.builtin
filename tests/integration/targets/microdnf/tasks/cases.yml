@@ -1,0 +1,193 @@
+# Each step runs compiled.builtin.microdnf in the container, then checks its
+# result and, with raw (no Python needed), what rpm says is installed.
+- name: tar and diffutils start out absent
+  ansible.builtin.raw: rpm -q tar diffutils >/dev/null && microdnf remove -y tar diffutils; true
+  delegate_to: "{{ container }}"
+  changed_when: false
+
+- name: Install in check mode
+  compiled.builtin.microdnf: {name: tar, state: present}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: rpm -q tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.msg == 'Check mode: No changes made, but would have if not in check mode'"
+      - "r.results | select('match', 'Installed: tar-[0-9]+:') | list | length == 1"
+      - q.rc != 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Install
+  compiled.builtin.microdnf: {name: tar, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: rpm -q tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - r.msg == ''
+      - r.rc == 0
+      - "r.results | select('match', 'Installed: tar-[0-9]+:.*\\.x86_64$') | list | length == 1"
+      - q.rc == 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Install again
+  compiled.builtin.microdnf: {name: tar, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+      - r.results == []
+    fail_msg: "{{ r | to_json }}"
+
+- name: Install again in check mode
+  compiled.builtin.microdnf: {name: tar, state: installed}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+    fail_msg: "{{ r | to_json }}"
+
+- name: latest when it is already the latest
+  compiled.builtin.microdnf: {name: tar, state: latest}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that: r is not changed
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove in check mode
+  compiled.builtin.microdnf: {name: tar, state: absent}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: rpm -q tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: tar-[0-9]+:') | list | length == 1"
+      - q.rc == 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove
+  compiled.builtin.microdnf: {name: tar, state: absent}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: rpm -q tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: tar-[0-9]+:') | list | length == 1"
+      - q.rc != 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove again, with removed and a package that doesn't exist
+  compiled.builtin.microdnf: {name: [tar, nosuchpackage], state: removed}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+    fail_msg: "{{ r | to_json }}"
+
+- name: latest installs what's missing, from comma-separated names
+  compiled.builtin.microdnf: {name: "tar,diffutils", state: latest}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Installed: tar-') | list | length == 1"
+      - "r.results | select('match', 'Installed: diffutils-') | list | length == 1"
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove both
+  compiled.builtin.microdnf: {name: [tar, diffutils], state: absent}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: (tar|diffutils)-') | list | length == 2"
+    fail_msg: "{{ r | to_json }}"
+
+- name: A package that doesn't exist
+  compiled.builtin.microdnf: {name: nosuchpackage, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.rc != 0
+      - r.msg is search('nosuchpackage')
+      - r.cmd[-1] == 'nosuchpackage'
+    fail_msg: "{{ r | to_json }}"
+
+- name: A package that doesn't exist in check mode
+  compiled.builtin.microdnf: {name: nosuchpackage, state: present}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('nosuchpackage')
+    fail_msg: "{{ r | to_json }}"
+
+- name: No names
+  compiled.builtin.microdnf: {name: [], state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+    fail_msg: "{{ r | to_json }}"
+
+- name: Another package manager
+  compiled.builtin.microdnf: {name: tar, state: present, use: apk}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('use must be auto or microdnf')
+    fail_msg: "{{ r | to_json }}"
+
+- name: An invalid state
+  compiled.builtin.microdnf: {name: tar, state: maybe}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('value of state must be one of')
+    fail_msg: "{{ r | to_json }}"

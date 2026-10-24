@@ -27,3 +27,6 @@ __pycache__/
 *.swp
 *~
 .DS_Store
+
+# Written by ansible-test integration --local on every run
+tests/integration/inventory

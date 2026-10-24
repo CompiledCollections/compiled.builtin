@@ -153,7 +153,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._reply(302, b'', 'text/plain', headers=cookies + [('Location', '/echo')])
             return self._echo(headers=cookies)
         if route == 'gzip':
-            body = gzip.compress(json.dumps({'gzipped': True}).encode())
+            body = gzip.compress(json.dumps({'gzipped': True}).encode(), mtime=0)  # the same bytes every time
             return self._reply(200, body, headers=[('Content-Encoding', 'gzip')])
         if route == 'delay':
             time.sleep(float(parts[1]))

@@ -14,6 +14,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // Result is a module result, serialized as the JSON object Ansible reads.
@@ -130,7 +131,9 @@ func Tmpdir() string {
 	if err := os.MkdirAll(base, 0o700); err != nil {
 		base = os.TempDir()
 	}
-	dir, err := os.MkdirTemp(base, "ansible-moduletmp-")
+	// Named like Python's: ansible-moduletmp-<time.time()>-<random>.
+	now := PyFloat(float64(time.Now().UnixNano()) / 1e9)
+	dir, err := os.MkdirTemp(base, "ansible-moduletmp-"+now.String()+"-")
 	if err != nil {
 		Fail(fmt.Sprintf("Failed to create remote module tmp path at dir %s: %v", base, err), nil)
 	}

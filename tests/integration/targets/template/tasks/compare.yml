@@ -1,0 +1,64 @@
+- name: "{{ case.name }} | prepare for ansible.builtin.template"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | ansible.builtin.template"
+  ansible.builtin.template:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  diff: "{{ case.diff | default(true) }}"
+  environment: "{{ case.environment | default({}) }}"
+  vars:
+    greeting: "{{ case.greeting | default('world') }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after ansible.builtin.template"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    builtin_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | prepare for compiled.builtin.template"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | compiled.builtin.template"
+  compiled.builtin.template:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  diff: "{{ case.diff | default(true) }}"
+  environment: "{{ case.environment | default({}) }}"
+  vars:
+    greeting: "{{ case.greeting | default('world') }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after compiled.builtin.template"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    compiled_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | results and files match"
+  when: case.python_differs is not defined or ansible_facts.python_version is version(case.python_differs.before, '>=')
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    # Times from this run (set to now, or of files the module made) differ
+    # between the runs, as do the names links are made under before the rename.
+    now_times: '"(atime|mtime)": 1[7-9]\d{8}(\.\d+)?'
+    # The remote temporary directory the source is uploaded to, the
+    # controller's temporary file for content, and backup names.
+    tmp_name: '/ansible-tmp-[0-9.]+-\d+-\d+/'
+    content_tmp: '/ansible-local-[^/]+/[^/"'']+'
+    backup_name: '\.\d+\.\d{4}-\d\d-\d\d@\d\d:\d\d:\d\d~'
+    volatile: [ansible_facts, invocation, exception, module_stderr]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(now_times, '\"\\1\": NOW') | regex_replace(tmp_name, '/ansible-tmp-X/') | regex_replace(content_tmp, '/ansible-local-X/.TMP') | regex_replace(backup_name, '.BACKUP~') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(now_times, '\"\\1\": NOW') | regex_replace(tmp_name, '/ansible-tmp-X/') | regex_replace(content_tmp, '/ansible-local-X/.TMP') | regex_replace(backup_name, '.BACKUP~') }}"
+  ansible.builtin.assert:
+    # No inline if/else: ansible-core 2.17 can't parse it in a conditional.
+    that: >-
+      (case.compare | default('') == 'failed' and (builtin is failed) == (compiled is failed))
+      or (case.compare | default('') != 'failed' and want == got and builtin_files == compiled_files)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }} {{ builtin_files }}
+      compiled.builtin: {{ got }} {{ compiled_files }}
+    quiet: true

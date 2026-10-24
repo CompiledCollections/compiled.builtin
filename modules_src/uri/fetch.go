@@ -99,6 +99,9 @@ func fetchURL(rawURL, method string, data []byte, hasData bool, headers *ordered
 
 var jar = &cookieJar{}
 
+// moduleName is the module this binary runs as, for messages.
+var moduleName = "compiled.builtin.uri"
+
 // openURL is Request.open with _configure_auth and make_context.
 func openURL(rawURL, method string, data []byte, hasData bool, userHeaders *orderedMap, timeout int, lastMod string) (*response, error) {
 	o := &options{
@@ -140,6 +143,10 @@ func openURL(rawURL, method string, data []byte, hasData bool, userHeaders *orde
 	if err != nil || u.Scheme == "" {
 		return nil, &valueError{"unknown url type: " + pyStrRepr(rawURL)}
 	}
+	if s := strings.ToLower(u.Scheme); s == "file" || s == "ftp" {
+		// urllib reads these itself; only HTTP and HTTPS have a Go equivalent here.
+		return nil, &unsupportedError{s + ":// URLs are not supported by " + moduleName + ": only http and https are"}
+	}
 
 	// _configure_auth
 	if o.username != "" {
@@ -152,7 +159,7 @@ func openURL(rawURL, method string, data []byte, hasData bool, userHeaders *orde
 	}
 	switch {
 	case args.UseGSSAPI:
-		return nil, &unsupportedError{"use_gssapi is not supported by compiled.builtin.uri: GSSAPI/Kerberos authentication needs the Python gssapi library"}
+		return nil, &unsupportedError{"use_gssapi is not supported by " + moduleName + ": GSSAPI/Kerberos authentication needs the Python gssapi library"}
 	case o.hasUsername && !o.forceBasicAuth:
 		o.originalAuthorityURL = &url.URL{Host: u.Host}
 	case o.hasUsername && o.forceBasicAuth:

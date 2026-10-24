@@ -1,0 +1,15 @@
+- name: Run the cases, then stop the test server
+  block:
+    - name: Compare compiled.builtin.get_url with ansible.builtin.get_url
+      ansible.builtin.include_tasks: compare.yml
+      loop: "{{ get_url_cases }}"
+      loop_control:
+        loop_var: case
+        label: "{{ case.name }}"
+
+    - name: Features without a Go equivalent fail clearly
+      ansible.builtin.include_tasks: unsupported.yml
+  always:
+    - name: Stop the test server
+      ansible.builtin.shell: kill "$(cat '{{ http_server_dir }}/server.pid')"
+      ignore_errors: true

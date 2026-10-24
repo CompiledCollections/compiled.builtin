@@ -1,0 +1,316 @@
+DOCUMENTATION:
+  module: get_url
+  short_description: Downloads files from HTTP, HTTPS, or FTP to node
+  description:
+  - Compiled Go replacement for M(ansible.builtin.get_url), with the same options and results. It does not need Python on the target.
+  - Downloads files from HTTP or HTTPS to the remote server. The remote server I(must) have direct access to the remote resource.
+  - By default, if an environment variable E(<protocol>_proxy) is set on the target host, requests will be sent through that proxy. This behaviour
+    can be overridden by setting a variable for this task (see R(setting the environment,playbooks_environment)), or by using the use_proxy option.
+  - HTTP redirects can redirect from HTTP to HTTPS so you should be sure that your proxy environment for both protocols is correct.
+  - From Ansible 2.4 when run with C(--check), it will do a HEAD request to validate the URL but will not download the entire file or verify it
+    against hashes and will report incorrect changed status.
+  version_added: 1.0.0
+  options:
+    ciphers:
+      description:
+      - SSL/TLS Ciphers to use for the request.
+      - When a list is provided, all ciphers are joined in order with C(:).
+      - Cipher names can be OpenSSL names (V(ECDHE-RSA-AES128-GCM-SHA256)) or IANA names
+        (V(TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256)). OpenSSL keywords and operators such as V(HIGH) or V(!aNULL)
+        are not supported and make the task fail.
+      - Like in M(ansible.builtin.get_url), this only restricts TLS 1.2 and older.
+      type: list
+      elements: str
+    decompress:
+      description:
+      - Whether to attempt to decompress gzip content-encoded responses.
+      type: bool
+      default: true
+    url:
+      description:
+      - HTTP or HTTPS URL in the form C((http|https)://[user[:pass]]@host.domain[:port]/path).
+      - FTP and C(file://) URLs are not supported by this module and make the task fail.
+      type: str
+      required: true
+    dest:
+      description:
+      - Absolute path of where to download the file to.
+      - If O(dest) is a directory, either the server provided filename or, if none provided, the base name of the URL on the remote server will
+        be used. If a directory, O(force) has no effect.
+      - If O(dest) is a directory, the file will always be downloaded (regardless of the O(force) and O(checksum) option), but replaced only if
+        the contents changed.
+      type: path
+      required: true
+    tmp_dest:
+      description:
+      - Absolute path of where temporary file is downloaded to.
+      - When run on Ansible 2.5 or greater, path defaults to ansible's C(remote_tmp) setting.
+      - When run on Ansible prior to 2.5, it defaults to E(TMPDIR), E(TEMP) or E(TMP) env variables or a platform specific value.
+      - U(https://docs.python.org/3/library/tempfile.html#tempfile.tempdir).
+      type: path
+    force:
+      description:
+      - If V(true) and O(dest) is not a directory, will download the file every time and replace the file if the contents change. If V(false),
+        the file will only be downloaded if the destination does not exist. Generally should be V(true) only for small local files.
+      - Prior to 0.6, this module behaved as if V(true) was the default.
+      type: bool
+      default: false
+    backup:
+      description:
+      - Create a backup file including the timestamp information so you can get the original file back if you somehow clobbered it incorrectly.
+      type: bool
+      default: false
+    checksum:
+      description:
+      - 'If a checksum is passed to this parameter, the digest of the destination file will be calculated after it is downloaded to ensure its
+        integrity and verify that the transfer completed successfully. Format: <algorithm>:<checksum|url>, for example C(checksum="sha256:D98291AC[...]B6DC7B97"),
+        C(checksum="sha256:http://example.com/path/sha256sum.txt").'
+      - If you worry about portability, only the sha1 algorithm is available on all platforms and python versions.
+      - The Python C(hashlib) module is responsible for providing the available algorithms. The choices vary based on Python version and OpenSSL
+        version.
+      - On systems running in FIPS compliant mode, the C(md5) algorithm may be unavailable.
+      - Additionally, if a checksum is supplied to this parameter, and the file exists under the O(dest) location, the C(destination_checksum)
+        would be calculated; and if checksum equals C(destination_checksum), the file download would be skipped (unless O(force=true)). If the
+        checksum does not equal C(destination_checksum), the destination file is replaced with the newly downloaded file.
+      - If the checksum URL requires username and password, O(url_username) and O(url_password) are used to download the checksum file.
+      type: str
+      default: ''
+    use_proxy:
+      description:
+      - if V(false), it will not use a proxy, even if one is defined in an environment variable on the target hosts.
+      type: bool
+      default: true
+    validate_certs:
+      description:
+      - If V(false), SSL certificates will not be validated.
+      - This should only be used on personally controlled sites using self-signed certificates.
+      type: bool
+      default: true
+    timeout:
+      description:
+      - Timeout in seconds for URL request.
+      type: int
+      default: 10
+    headers:
+      description:
+      - Add custom HTTP headers to a request in hash/dict format.
+      - The hash/dict format was added in Ansible 2.6.
+      - Previous versions used a C("key:value,key:value") string format.
+      - The C("key:value,key:value") string format is deprecated and has been removed in version 2.10.
+      type: dict
+    url_username:
+      description:
+      - The username for use in HTTP basic authentication.
+      - This parameter can be used without O(url_password) for sites that allow empty passwords.
+      - Since version 2.8 you can also use the O(username) alias for this option.
+      type: str
+      aliases:
+      - username
+    url_password:
+      description:
+      - The password for use in HTTP basic authentication.
+      - If the O(url_username) parameter is not specified, the O(url_password) parameter will not be used.
+      - Since version 2.8 you can also use the O(password) alias for this option.
+      type: str
+      aliases:
+      - password
+    force_basic_auth:
+      description:
+      - Force the sending of the Basic authentication header upon initial request.
+      - httplib2, the library used by the uri module only sends authentication information when a webservice responds to an initial request with
+        a 401 status. Since some basic auth services do not properly send a 401, logins will fail.
+      type: bool
+      default: false
+    client_cert:
+      description:
+      - PEM formatted certificate chain file to be used for SSL client authentication.
+      - This file can also include the key as well, and if the key is included, O(client_key) is not required.
+      type: path
+    client_key:
+      description:
+      - PEM formatted file that contains your private key to be used for SSL client authentication.
+      - If O(client_cert) contains both the certificate and key, this option is not required.
+      type: path
+    http_agent:
+      description:
+      - Header to identify as, generally appears in web server logs.
+      type: str
+      default: ansible-httpget
+    unredirected_headers:
+      description:
+      - A list of header names that will not be sent on subsequent redirected requests. This list is case insensitive. By default all headers
+        will be redirected. In some cases it may be beneficial to list headers such as C(Authorization) here to avoid potential credential exposure.
+      default: []
+      type: list
+      elements: str
+    use_gssapi:
+      description:
+      - Not supported by this module, which fails when it is set; it exists for compatibility with M(ansible.builtin.get_url).
+      - GSSAPI (Kerberos) authentication needs the Python C(gssapi) library, which a compiled module can't use.
+      type: bool
+      default: false
+    use_netrc:
+      description:
+      - Determining whether to use credentials from C(~/.netrc) file.
+      - By default C(.netrc) is used with Basic authentication headers.
+      - When V(false), C(.netrc) credentials are ignored.
+      type: bool
+      default: true
+  extends_documentation_fragment:
+  - ansible.builtin.files
+  - ansible.builtin.action_common_attributes
+  attributes:
+    check_mode:
+      details: the changed status will reflect comparison to an empty source file
+      support: partial
+      description: Can run in check_mode and return changed status prediction without modifying target.
+    diff_mode:
+      support: none
+      description: Will return details on what has changed (or possibly needs changing in check_mode), when in diff mode.
+    platform:
+      platforms: posix
+      description: Target OS/families that can be operated against.
+  seealso:
+  - module: ansible.builtin.get_url
+  - module: ansible.builtin.uri
+  author:
+  - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Download foo.conf
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      mode: '0440'
+
+  - name: Download file and force basic auth
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      force_basic_auth: yes
+
+  - name: Download file with custom HTTP headers
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      headers:
+        key1: one
+        key2: two
+
+  - name: Download file with check (sha256)
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      checksum: sha256:b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+
+  - name: Download file with check (md5)
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      checksum: md5:66dffb5228a211e61d6d7ef4a86f5758
+
+  - name: Download file with checksum url (sha256)
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      checksum: sha256:http://example.com/path/sha256sum.txt
+
+  - name: < Fetch file that requires authentication.
+          username/password only available since 2.8, in older versions you need to use url_username/url_password
+    compiled.builtin.get_url:
+      url: http://example.com/path/file.conf
+      dest: /etc/foo.conf
+      username: bar
+      password: '{{ mysecret }}'
+
+RETURN:
+  backup_file:
+    description: name of backup file created after download
+    returned: changed and if backup=yes
+    type: str
+    sample: /path/to/file.txt.2015-02-12@22:09~
+  checksum_dest:
+    description: sha1 checksum of the file after copy
+    returned: success
+    type: str
+    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
+  checksum_src:
+    description: sha1 checksum of the file
+    returned: success
+    type: str
+    sample: 6e642bb8dd5c2e027bf21dd923337cbb4214f827
+  dest:
+    description: destination file/path
+    returned: success
+    type: str
+    sample: /path/to/file.txt
+  elapsed:
+    description: The number of seconds that elapsed while performing the download
+    returned: always
+    type: int
+    sample: 23
+  gid:
+    description: group id of the file
+    returned: success
+    type: int
+    sample: 100
+  group:
+    description: group of the file
+    returned: success
+    type: str
+    sample: httpd
+  md5sum:
+    description: md5 checksum of the file after download
+    returned: when supported
+    type: str
+    sample: 2a5aeecc61dc98c4d780b14b330e3282
+  mode:
+    description: permissions of the target
+    returned: success
+    type: str
+    sample: '0644'
+  msg:
+    description: the HTTP message from the request
+    returned: always
+    type: str
+    sample: OK (unknown bytes)
+  owner:
+    description: owner of the file
+    returned: success
+    type: str
+    sample: httpd
+  secontext:
+    description: the SELinux security context of the file
+    returned: success
+    type: str
+    sample: unconfined_u:object_r:user_tmp_t:s0
+  size:
+    description: size of the target
+    returned: success
+    type: int
+    sample: 1220
+  src:
+    description: source file used after download
+    returned: always
+    type: str
+    sample: /tmp/tmpAdFLdV
+  state:
+    description: state of the target
+    returned: success
+    type: str
+    sample: file
+  status_code:
+    description: the HTTP status code from the request
+    returned: always
+    type: int
+    sample: 200
+  uid:
+    description: owner id of the file, after execution
+    returned: success
+    type: int
+    sample: 100
+  url:
+    description: the actual URL used for the request
+    returned: always
+    type: str
+    sample: https://www.ansible.com/

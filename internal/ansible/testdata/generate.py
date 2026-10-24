@@ -70,6 +70,25 @@ STRPTIME = [
     ("2021-13-01", "%Y-%m-%d"), ("2021-02-30", "%Y-%m-%d"),
 ]
 FLOATS = [0.0, 1.0, -2.5, 1609459200.0, 1791348442.9856722, 1e-05, 0.0001, 1e16, 1.5e16, 123456789012345.6, 0.1 + 0.2]
+SPLITLINES = [
+    "a\nb", "a\r\nb\r", "a\rb\n\n", "", "\n", "a\x0bb\x0cc\x1cd\x1de\x1ef\x85g\u2028h\u2029i", "no newline",
+    "\r\n\r\n", "x\r", "\r\r\n", "é\u2028",
+]
+MULTILINE = ["(?m)a", "(?mi)a", "(?i)(?m)a", "(?m:a)", "(?s)x", "plain", "(?ms)x", "(?i:a)(?m)"]
+# re.subn with re.MULTILINE, as replace runs it: (pattern, template, string).
+SUBN = [
+    (r"\s*$", "-", "a  \nb  "), (r"x*", "-", "abxd"), (r"^", "# ", "a\nb\n"), (r"$", ";", "a\nb\n"),
+    (r"\s*$", "-", "a  \nb\n"), (r"b*", "-", "abb"), ("", "-", "ab"), (r"(a)(b)?", r"[\1|\2]", "aab"),
+    (r"(?P<k>\w+)=(?P<v>\w*)", r"\g<v>=\g<k>", "a=1\nb=\n"), (r"é*", "-", "éaé"), (r"\b", "|", "ab cd"),
+    (r"a|", "-", "bab"), (r"(?i)A", "x", "aA"), (r"\d+", r"<\g<0>>", "a1b22"), (r"x", "y", "no match"),
+    (r"(x)?", r"[\1]", "ax"), (r"\n", " ", "a\r\nb\n"), (r"^\s*$", "", "a\n\n  \nb"),
+]
+TEMPLATES = [
+    r"\q", r"\g", r"\g<", r"\g<>", r"\g<a", r"\g<1a>", r"\g<-1>", r"\5", r"\g<5>", r"\g<nope>", "\\", "ab\\",
+    r"\8", r"\08", r"\400", r"\g<k>\2", r"\g< 1>", r"\g<٣>", r"\x41", r"\N{DIGIT ONE}", r"\-", r"\é", r"\g<007>",
+    r"\g<99999999999999999999>", r"\177", r"\1\0", r"\g<0>", r"\12", r"x\ty",
+]
+NORMPATH = ["", ".", "/", "//", "///", "a//b", "a/./b", "a/../b", "../a", "/../a", "a/b/../../..", "//a/./b/", "a/", "./", "a/b/..", "/a/b/../../../c"]
 PERCENT = ["check %s", "%s", "a %% b %s", "no arg", "%s %s", "%d", "trail %"]
 
 
@@ -92,6 +111,30 @@ def shlex_case(s):
         return {"in": s, "out": shlex.split(s)}
     except ValueError as e:
         return {"in": s, "err": str(e)}
+
+
+def multiline_case(pattern):
+    try:
+        return {"re": pattern, "multiline": bool(re.compile(pattern).flags & re.MULTILINE)}
+    except re.error as e:
+        return {"re": pattern, "err": str(e)}
+
+
+def subn_case(pattern, template, s):
+    try:
+        out, n = re.subn(re.compile(pattern, re.MULTILINE), template, s)
+        return {"re": pattern, "t": template, "s": s, "out": out, "n": n}
+    except re.error as e:
+        return {"re": pattern, "t": template, "s": s, "err": str(e)}
+
+
+def template_case(template):
+    try:
+        return {"t": template, "out": re.compile(r"(?P<k>a)(b)").sub(template, "xab")}
+    except re.error as e:
+        return {"t": template, "err": str(e)}
+    except IndexError as e:
+        return {"t": template, "index_err": str(e)}
 
 
 def regex_case(pattern, s):
@@ -124,4 +167,9 @@ print(json.dumps({
     "strptime": [strptime_case(v, f) for v, f in STRPTIME],
     "pyfloat": [{"in": f, "out": repr(f)} for f in FLOATS],
     "percent": [percent_case(f) for f in PERCENT],
+    "splitlines": [{"in": s, "out": s.splitlines(True)} for s in SPLITLINES],
+    "multiline": [multiline_case(p) for p in MULTILINE],
+    "subn": [subn_case(p, t, s) for p, t, s in SUBN],
+    "normpath": [{"in": p, "out": os.path.normpath(p)} for p in NORMPATH],
+    "templates": [template_case(t) for t in TEMPLATES],
 }, ensure_ascii=False, indent=1))
