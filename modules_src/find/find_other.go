@@ -1,0 +1,28 @@
+//go:build !linux && !darwin && !freebsd && !netbsd
+
+package find
+
+import (
+	"syscall"
+
+	"compiled/builtin/internal/ansible"
+)
+
+func pyTime(sec, nsec int64) ansible.PyFloat {
+	return ansible.PyFloat(float64(sec) + float64(nsec)*1e-9)
+}
+
+// statTimes are os.stat_result's st_atime, st_mtime and st_ctime.
+func statTimes(st *syscall.Stat_t) map[string]ansible.PyFloat {
+	return map[string]ansible.PyFloat{
+		"atime": pyTime(int64(st.Atim.Sec), int64(st.Atim.Nsec)),
+		"mtime": pyTime(int64(st.Mtim.Sec), int64(st.Mtim.Nsec)),
+		"ctime": pyTime(int64(st.Ctim.Sec), int64(st.Ctim.Nsec)),
+	}
+}
+
+// platformFields adds what the builtin adds when os.stat_result has st_blocks.
+func platformFields(st *syscall.Stat_t, out map[string]any) {
+	out["blocks"] = st.Blocks
+	out["disk_usage_bytes"] = int64(st.Blocks) * 512
+}

@@ -1,0 +1,57 @@
+- name: "{{ case.name }} | prepare for ansible.builtin.get_url"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | ansible.builtin.get_url"
+  ansible.builtin.get_url:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after ansible.builtin.get_url"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    builtin_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | prepare for compiled.builtin.get_url"
+  ansible.builtin.include_tasks: prepare.yml
+
+- name: "{{ case.name }} | compiled.builtin.get_url"
+  compiled.builtin.get_url:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  environment: "{{ case.environment | default({}) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | files after compiled.builtin.get_url"
+  ansible.builtin.include_tasks: capture.yml
+- ansible.builtin.set_fact:
+    compiled_files: "{{ captured.stdout }}"
+
+- name: "{{ case.name }} | results and files match"
+  when: case.python_differs is not defined or ansible_facts.python_version is version(case.python_differs.before, '>=')
+  vars:
+    # Python lists valid booleans from a set, in an order that changes per process.
+    set_order: 'Valid booleans include: [^"]*'
+    # Python adds the location in its C source to TLS errors.
+    ssl_location: ' \(_ssl\.c:\d+\)'
+    # The module's temporary directory and the download's temporary file
+    # have random names.
+    module_tmp: 'ansible-moduletmp-[0-9.]+-[A-Za-z0-9_]+'
+    tmp_name: '/tmp[A-Za-z0-9_]+\b'
+    backup_name: '\.\d+\.\d{4}-\d\d-\d\d@\d\d:\d\d:\d\d~'
+    volatile: [ansible_facts, invocation, exception, module_stderr, elapsed]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(ssl_location, '') | regex_replace(module_tmp, 'ansible-moduletmp-X') | regex_replace(tmp_name, '/TMP') | regex_replace(backup_name, '.BACKUP~') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('compiled.builtin.', 'MODULE.') | regex_replace(set_order, '') | regex_replace(ssl_location, '') | regex_replace(module_tmp, 'ansible-moduletmp-X') | regex_replace(tmp_name, '/TMP') | regex_replace(backup_name, '.BACKUP~') }}"
+  ansible.builtin.assert:
+    # No inline if/else: ansible-core 2.17 can't parse it in a conditional.
+    that: >-
+      (case.compare | default('') == 'failed' and (builtin is failed) == (compiled is failed))
+      or (case.compare | default('') != 'failed' and want == got and builtin_files == compiled_files)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }} {{ builtin_files }}
+      compiled.builtin: {{ got }} {{ compiled_files }}
+    quiet: true

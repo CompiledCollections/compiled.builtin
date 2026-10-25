@@ -191,10 +191,10 @@ class CompiledModules:
             platform, error = self._compiled_target_platform(task_vars)
             binary = None
             if platform:
-                binary, error = self._find_binary(module, platform)
+                binary, error = self._find_binary(platform)
             if error:
                 return dict(failed=True, msg=error)
-            result = self._execute_binary(binary, validated, task_vars, **kwargs)
+            result = self._execute_binary(binary, dict(validated, _compiled_module=module), task_vars, **kwargs)
             if no_log_values:
                 result = self.hide_no_log_values(result, no_log_values)
         if inject_invocation(task_vars):
@@ -251,10 +251,10 @@ class CompiledModules:
         """Mask no_log values in the module's own result values."""
         return remove_values(result, no_log_values)
 
-    def _find_binary(self, module, platform):
-        """Return (module name to execute, error message)."""
+    def _find_binary(self, platform):
+        """Return (name of the multi-call binary to execute, error message)."""
         loader = self._shared_loader_obj.module_loader
-        name = '%s_%s' % (module, platform)
+        name = go_build.binary_name(platform)
 
         shipped = '%s.%s' % (COLLECTION, name)
         if loader.find_plugin_with_context(shipped).resolved:
@@ -263,18 +263,17 @@ class CompiledModules:
         # The hash keeps binaries from different source versions apart, and the
         # suffix keeps a binary built before UPX was installed from being reused.
         pack = go_build.can_pack(platform)
-        build_dir = os.path.join(cache_dir(), go_build.source_hash(module) + ('-upx' if pack else ''))
+        build_dir = os.path.join(cache_dir(), go_build.source_hash() + ('-upx' if pack else ''))
         dest = os.path.join(build_dir, name)
         if not os.path.isfile(dest):
             if platform in go_build.UPX_PLATFORMS and not pack:
-                display.warning('compiled.builtin: upx is not installed, so the %s binary for %s '
-                                'will not be compressed' % (module, platform))
-            display.vv('compiled.builtin: compiling %s for %s into %s' % (module, platform, dest))
+                display.warning('compiled.builtin: upx is not installed, so the binary for %s '
+                                'will not be compressed' % platform)
+            display.vv('compiled.builtin: compiling the modules for %s into %s' % (platform, dest))
             try:
-                go_build.build(module, platform, dest)
+                go_build.build_once(platform, dest)
             except go_build.BuildError as e:
-                return None, 'No precompiled %s binary for %s, and compiling it failed: %s' % (
-                    module, platform, e)
+                return None, 'No precompiled binary for %s, and compiling it failed: %s' % (platform, e)
 
         loader.add_directory(build_dir)
         if not loader.find_plugin_with_context(name).resolved:
@@ -316,6 +315,29 @@ class CompiledModules:
         return platform, detected
 
 
+class SwapsModules(CompiledModules):
+    """Mixed into an ansible.builtin action plugin (listed first) so that its
+    calls to Python modules run compiled modules instead. ``compiled`` maps
+    the name the builtin action calls, such as ``ansible.legacy.stat``, to
+    the compiled module and its argument spec."""
+
+    compiled = {}
+
+    def run(self, tmp=None, task_vars=None):
+        result = super(SwapsModules, self).run(tmp, task_vars)
+        return self._add_platform_fact(result)
+
+    def _execute_module(self, module_name=None, module_args=None, task_vars=None, **kwargs):
+        if module_name not in self.compiled:
+            return super(SwapsModules, self)._execute_module(
+                module_name=module_name, module_args=module_args, task_vars=task_vars, **kwargs)
+        module, argument_spec = self.compiled[module_name]
+        if module_args is None:
+            module_args = self._task.args.copy()
+        return self._execute_compiled(module, module_args, task_vars or {}, argument_spec,
+                                      name='%s.%s' % (COLLECTION, module), **kwargs)
+
+
 class GoModuleAction(CompiledModules, ActionBase):
     """Base for the modules' action plugins.
 
@@ -330,8 +352,11 @@ class GoModuleAction(CompiledModules, ActionBase):
     mutually_exclusive = None
     required_one_of = None
 
-    # The binary to run, when not the one named after the action (shell runs command).
+    # The Go module to run, when not the one named after the action (shell runs command).
     module_binary = None
+    # Internal arguments for that module, added after validation so they don't
+    # show in validation errors (get_url runs uri with _get_url).
+    binary_args = None
     # The module named in validation errors, when not this action.
     validation_name = None
 
@@ -361,7 +386,7 @@ class GoModuleAction(CompiledModules, ActionBase):
             return result
 
         module = self.module_binary or self._task.action.split('.')[-1]
-        binary, error = self._find_binary(module, platform)
+        binary, error = self._find_binary(platform)
         if error:
             result.update(failed=True, msg=error)
             return result
@@ -369,7 +394,7 @@ class GoModuleAction(CompiledModules, ActionBase):
         wrap_async = self._task.async_val and not self._connection.has_native_async
         module_result = self._execute_module(
             module_name=binary,
-            module_args=module_args,
+            module_args=dict(module_args, _compiled_module=module, **(self.binary_args or {})),
             task_vars=task_vars,
             wrap_async=wrap_async,
         )

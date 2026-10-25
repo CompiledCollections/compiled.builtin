@@ -1,5 +1,5 @@
 // Stat equivalent module, written in Go. Mirrors ansible.builtin.stat.
-package main
+package stat
 
 import (
 	"crypto/md5"
@@ -42,7 +42,8 @@ func pyTime(sec, nsec int64) ansible.PyFloat {
 	return ansible.PyFloat(float64(sec) + float64(nsec)*1e-9)
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	var args Args
 	ansible.ReadArgs(&args)
 	path := ansible.ExpandPath(args.Path)

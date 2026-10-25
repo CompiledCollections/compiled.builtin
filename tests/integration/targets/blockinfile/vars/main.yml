@@ -1,0 +1,408 @@
+bif_dir: "{{ output_dir }}/blockinfile"
+bif_file: "{{ bif_dir }}/file.txt"
+current_user: "{{ lookup('pipe', 'id -un') }}"
+current_uid: "{{ lookup('pipe', 'id -u') }}"
+current_group: "{{ lookup('pipe', 'id -gn') }}"
+other_group: "{{ lookup('pipe', 'id -Gn').split() | reject('eq', current_group) | first | default(current_group) }}"
+
+# A block already in a file, between the default markers.
+managed: "# BEGIN ANSIBLE MANAGED BLOCK\nold\n# END ANSIBLE MANAGED BLOCK\n"
+
+# Each case writes `content` (or base64 `content_b64`) to bif_file, runs
+# ansible.builtin.blockinfile and compiled.builtin.blockinfile with `args`
+# (path defaults to bif_file), and compares the results and the files left
+# behind. Diff mode is on unless `diff: false`. `compare: failed` only
+# compares whether the task failed, for errors whose wording comes from
+# Python's or Go's own libraries.
+blockinfile_cases:
+  # Inserting blocks
+  - name: insert a block at the end
+    content: "one\ntwo\n"
+    args: {block: "a\nb"}
+  - name: block already present
+    content: "one\n{{ managed }}"
+    args: {block: old}
+  - name: replace an existing block
+    content: "one\n{{ managed }}two\n"
+    args: {block: "new\nlines\n"}
+  - name: block with a trailing newline
+    content: "one\n"
+    args: {block: "a\n"}
+  - name: file without a trailing newline
+    content: "one\ntwo"
+    args: {block: a}
+  - name: empty file
+    content: ""
+    args: {block: a}
+  - name: unicode block
+    content: "uno\n"
+    args: {block: "dös ✓\nüber"}
+  - name: block containing carriage returns
+    content: "one\n"
+    args: {block: "a\r\nb\rc"}
+  - name: windows line endings are kept
+    content: "one\r\ntwo\r\n"
+    args: {block: a}
+  - name: windows line endings around a block
+    content: "one\r\n# BEGIN ANSIBLE MANAGED BLOCK\r\nold\r\n# END ANSIBLE MANAGED BLOCK\r\n"
+    args: {block: new}
+  - name: vertical tab and form feed split lines
+    content: "a\x0bb\x0cc\n"
+    args: {block: x, insertafter: '^a'}
+  - name: unicode line separator splits lines
+    content: "a b\n"
+    args: {block: x, insertbefore: '^b'}
+
+  # Markers
+  - name: markers in reverse order
+    content: "one\n# END ANSIBLE MANAGED BLOCK\nmid\n# BEGIN ANSIBLE MANAGED BLOCK\ntwo\n"
+    args: {block: new}
+  - name: only the begin marker
+    content: "one\n# BEGIN ANSIBLE MANAGED BLOCK\nold\n"
+    args: {block: new}
+  - name: only the end marker
+    content: "one\nold\n# END ANSIBLE MANAGED BLOCK\n"
+    args: {block: new}
+  - name: marker with surrounding spaces is a different line
+    content: "one\n  # BEGIN ANSIBLE MANAGED BLOCK\nold\n# END ANSIBLE MANAGED BLOCK\n"
+    args: {block: new}
+  - name: markers repeated, the last ones win
+    content: "{{ managed }}mid\n{{ managed }}"
+    args: {block: new}
+  - name: custom marker
+    content: "<html>\n<body>\n</body>\n"
+    args: {block: "<h1>hi</h1>", marker: "<!-- {mark} ANSIBLE MANAGED BLOCK -->"}
+  - name: custom marker_begin and marker_end
+    content: "one\n"
+    args: {block: a, marker_begin: START, marker_end: STOP}
+  - name: marker with mark twice
+    content: "one\n"
+    args: {block: a, marker: "# {mark} block {mark}"}
+  - name: marker without mark
+    content: "one\n"
+    args: {block: a, marker: "# managed"}
+  - name: marker without mark already present
+    content: "one\n# managed\na\n# managed\n"
+    args: {block: a, marker: "# managed"}
+  - name: marker_begin with escapes
+    content: "one\n"
+    args: {block: a, marker_begin: 'BEGIN\tTAB\\'}
+  - name: marker_begin with an octal escape
+    content: "one\n"
+    args: {block: a, marker_begin: 'X\0Y'}
+  - name: marker_begin with a bad escape
+    content: "one\n"
+    args: {block: a, marker_begin: 'BEGIN\q'}
+  - name: marker_begin with a group reference
+    content: "one\n"
+    args: {block: a, marker_begin: 'BEGIN\1'}
+  - name: marker_end with a bad escape even without mark
+    content: "one\n"
+    args: {block: a, marker: "# managed", marker_end: 'END\q'}
+  - name: unicode markers
+    content: "uno\n"
+    args: {block: a, marker: "# {mark} bloque ✓", marker_begin: INICIO, marker_end: FIN}
+
+  # insertafter and insertbefore
+  - name: insertafter the last match
+    content: "a\nkey=1\nb\nkey=2\nc\n"
+    args: {block: x, insertafter: '^key='}
+  - name: insertafter without a match goes to the end
+    content: "a\nb\n"
+    args: {block: x, insertafter: '^nomatch'}
+  - name: insertafter EOF
+    content: "a\nb\n"
+    args: {block: x, insertafter: EOF}
+  - name: insertafter BOF is a regular expression
+    content: "a\nBOF\nb\n"
+    args: {block: x, insertafter: BOF}
+  - name: insertafter an empty string
+    content: "a\nb\n"
+    args: {block: x, insertafter: ''}
+  - name: insertafter the last line without a newline
+    content: "a\nb"
+    args: {block: x, insertafter: '^b'}
+  - name: insertbefore the last match
+    content: "a\nkey=1\nb\nkey=2\nc\n"
+    args: {block: x, insertbefore: '^key='}
+  - name: insertbefore BOF
+    content: "a\nb\n"
+    args: {block: x, insertbefore: BOF}
+  - name: insertbefore without a match goes to the end
+    content: "a\nb\n"
+    args: {block: x, insertbefore: '^nomatch'}
+  - name: insertbefore EOF is a regular expression
+    content: "a\nEOF\nb\n"
+    args: {block: x, insertbefore: EOF}
+  - name: insertbefore an empty string
+    content: "a\nb\n"
+    args: {block: x, insertbefore: ''}
+  - name: insertbefore the first line
+    content: "a\nb\n"
+    args: {block: x, insertbefore: '^a'}
+  - name: insertafter ignored when the block exists
+    content: "a\n{{ managed }}b\n"
+    args: {block: new, insertafter: '^b'}
+  - name: insertafter regexp dollar matches before the newline
+    content: "a=1\nb=2\n"
+    args: {block: x, insertafter: '^a=\d$'}
+  - name: insertafter regexp is unicode-aware
+    content: "näme=1\nother\n"
+    args: {block: x, insertafter: '^\w+=1'}
+  - name: insertafter case-insensitive
+    content: "a\nKEY\nb\n"
+    args: {block: x, insertafter: '(?i)^key'}
+  - name: insertafter with the multiline flag
+    content: "LISTENER =\n  (SID_LIST =\n    (x)\n  )\n"
+    args: {block: x, insertafter: '(?m)LISTENER =\n.*\(SID_LIST ='}
+  - name: insertbefore with the multiline flag
+    content: "a\nstart\nend\nb\n"
+    args: {block: x, insertbefore: '(?m)^start\nend$'}
+  - name: multiline flag without a match goes to the end
+    content: "a\nb\n"
+    args: {block: x, insertafter: '(?m)^z\nz'}
+  - name: multiline flag with dollar
+    content: "a\nb\nc\n"
+    args: {block: x, insertafter: '(?m)^b$'}
+  - name: multiline match ending in a newline
+    content: "a\nb\nc\n"
+    args: {block: x, insertafter: '(?m)^a\n'}
+  - name: multiline match past the last line
+    content: "a\n"
+    args: {block: x, insertafter: '(?m)a\n'}
+  - name: multiline insertafter on a missing file
+    args: {block: x, insertafter: '(?m)^a', create: true}
+  - name: multiline insertbefore with an empty match
+    content: "a\nb\n"
+    args: {block: x, insertbefore: '(?m)^$'}
+  - name: multiline insertafter counts only newlines
+    content: "a\rb\nc\n"
+    args: {block: x, insertafter: '(?m)c'}
+  - name: scoped multiline flag matches line by line
+    content: "a\nb\n"
+    args: {block: x, insertafter: '(?m:^a$)'}
+  - name: invalid insertafter regexp
+    content: "a\n"
+    args: {block: x, insertafter: '('}
+    compare: failed
+  - name: insertbefore and insertafter are mutually exclusive
+    content: "a\n"
+    args: {block: x, insertbefore: a, insertafter: a}
+
+  # Blank lines around the block
+  - name: prepend_newline in the middle
+    content: "a\nb\n"
+    args: {block: x, insertafter: '^a', prepend_newline: true}
+  - name: prepend_newline at the start
+    content: "a\nb\n"
+    args: {block: x, insertbefore: BOF, prepend_newline: true}
+  - name: prepend_newline after a blank line
+    content: "a\n\nb\n"
+    args: {block: x, insertbefore: '^b', prepend_newline: true}
+  - name: append_newline in the middle
+    content: "a\nb\n"
+    args: {block: x, insertafter: '^a', append_newline: true}
+  - name: append_newline at the end
+    content: "a\nb\n"
+    args: {block: x, append_newline: true}
+  - name: append_newline before a blank line
+    content: "a\n\nb\n"
+    args: {block: x, insertafter: '^a', append_newline: true}
+  - name: append and prepend newlines
+    content: "a\nb\n"
+    args: {block: x, insertafter: '^a', append_newline: true, prepend_newline: true}
+  - name: append and prepend newlines on an existing block
+    content: "a\n{{ managed }}b\n"
+    args: {block: new, append_newline: true, prepend_newline: true}
+  - name: newlines are not added when removing
+    content: "a\n{{ managed }}b\n"
+    args: {state: absent, append_newline: true, prepend_newline: true}
+  - name: prepend_newline with windows line endings
+    content: "a\r\nb\r\n"
+    args: {block: x, insertafter: '^a', prepend_newline: true}
+
+  # Removing blocks
+  - name: absent removes the block
+    content: "a\n{{ managed }}b\n"
+    args: {state: absent}
+  - name: absent with nothing to remove
+    content: "a\nb\n"
+    args: {state: absent}
+  - name: absent on a missing file
+    args: {state: absent}
+  - name: empty block removes the block
+    content: "a\n{{ managed }}b\n"
+    args: {block: ""}
+  - name: missing block removes the block
+    content: "a\n{{ managed }}b\n"
+    args: {}
+  - name: absent with backup
+    content: "a\n{{ managed }}"
+    args: {state: absent, backup: true}
+
+  # create
+  - name: create a missing file
+    args: {block: a, create: true}
+  - name: missing file without create
+    args: {block: a}
+  - name: create in a missing directory
+    args: {path: "{{ bif_dir }}/new/dir/file.txt", block: a, create: true}
+  - name: create with an empty block
+    args: {block: "", create: true}
+  - name: create in check mode
+    args: {block: a, create: true}
+    check_mode: true
+  - name: create in a missing directory in check mode
+    args: {path: "{{ bif_dir }}/new/dir/file.txt", block: a, create: true}
+    check_mode: true
+  - name: create with insertbefore BOF
+    args: {block: a, create: true, insertbefore: BOF}
+  - name: create with mode
+    args: {block: a, create: true, mode: "0600"}
+
+  # Argument and state errors
+  - name: path is a directory
+    args: {path: "{{ bif_dir }}", block: a}
+  - name: invalid state
+    content: "a\n"
+    args: {block: b, state: maybe}
+  - name: unsupported option
+    content: "a\n"
+    args: {block: b, bogus: true}
+  - name: path is required
+    args: {block: b}
+    no_path: true
+
+  # Aliases
+  - name: dest alias
+    content: "a\n"
+    args: {dest: "{{ bif_file }}", block: b}
+  - name: name alias
+    content: "a\n"
+    args: {name: "{{ bif_file }}", block: b}
+  - name: destfile alias
+    content: "a\n"
+    args: {destfile: "{{ bif_file }}", block: b}
+  - name: content alias
+    content: "a\n"
+    args: {content: b}
+  - name: path with variables is expanded on the target
+    content: "a\n"
+    args: {path: "$BIF_DIR/file.txt", block: b}
+    environment: {BIF_DIR: "{{ bif_dir }}"}
+
+  # Backups
+  - name: backup when changed
+    content: "a\n"
+    args: {block: b, backup: true}
+  - name: no backup when unchanged
+    content: "a\n{{ managed }}"
+    args: {block: old, backup: true}
+  - name: no backup when created
+    args: {block: b, backup: true, create: true}
+
+  # Check and diff modes
+  - name: check mode with a change
+    content: "a\n"
+    args: {block: b}
+    check_mode: true
+  - name: check mode without a change
+    content: "a\n{{ managed }}"
+    args: {block: old}
+    check_mode: true
+  - name: check mode removing a block
+    content: "a\n{{ managed }}"
+    args: {state: absent}
+    check_mode: true
+  - name: diff mode off
+    content: "a\n"
+    args: {block: b}
+    diff: false
+  - name: diff of an empty file
+    content: ""
+    args: {block: b}
+
+  # File attributes
+  - name: mode as an octal string
+    content: "a\n"
+    args: {block: b, mode: "0600"}
+  - name: mode as an integer
+    content: "a\n"
+    args: {block: b, mode: 0600}
+  - name: symbolic mode
+    content: "a\n"
+    args: {block: b, mode: "u+x,g-r,o="}
+  - name: only the mode changes
+    content: "a\n{{ managed }}"
+    args: {block: old, mode: "0600"}
+  - name: mode already right
+    content: "a\n{{ managed }}"
+    args: {block: old, mode: "0644"}
+  - name: invalid mode
+    content: "a\n"
+    args: {block: b, mode: "abc"}
+  - name: existing permissions are kept on rewrite
+    content: "a\n"
+    args: {block: b}
+    file_mode: "0640"
+  - name: owner by name
+    content: "a\n"
+    args: {block: b, owner: "{{ current_user }}"}
+  - name: unknown owner
+    content: "a\n"
+    args: {block: b, owner: no_such_user_xyz}
+  - name: group
+    content: "a\n{{ managed }}"
+    args: {block: old, group: "{{ other_group }}"}
+  - name: unknown group
+    content: "a\n"
+    args: {block: b, group: no_such_group_xyz}
+  - name: unsafe_writes is accepted
+    content: "a\n"
+    args: {block: b, unsafe_writes: true}
+
+  # Encodings
+  - name: latin-1 file
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {block: "thé", encoding: latin-1}
+  - name: utf-16 file
+    content_b64: "{{ 'one\ntwo\n' | b64encode(encoding='utf-16') }}"
+    args: {block: three, encoding: utf-16}
+  - name: utf-8 with a BOM
+    content_b64: "{{ '﻿one\n' | b64encode }}"
+    args: {block: two}
+  - name: invalid utf-8
+    content_b64: "{{ 'caf\xe9\n' | b64encode(encoding='latin-1') }}"
+    args: {block: x}
+  - name: unencodable block
+    content: "a\n"
+    args: {block: "é", encoding: ascii}
+  - name: unknown encoding
+    content: "a\n"
+    args: {block: b, encoding: no-such-codec}
+  - name: unknown encoding creating a file
+    args: {block: b, encoding: no-such-codec, create: true}
+
+  # validate
+  - name: validate passes
+    content: "a\n"
+    args: {block: b, validate: "grep -q b %s"}
+  - name: validate fails
+    content: "a\n"
+    args: {block: b, validate: "grep -q zzz %s"}
+  - name: validate without %s
+    content: "a\n"
+    args: {block: b, validate: "true"}
+  - name: validate not run without a change
+    content: "a\n{{ managed }}"
+    args: {block: old, validate: "false %s"}
+
+  # Symlinks
+  - name: a symlink's target is updated
+    content: "a\n"
+    args: {path: "{{ bif_dir }}/link.txt", block: b}
+    symlink: true
+  - name: a symlink's target with backup
+    content: "a\n"
+    args: {path: "{{ bif_dir }}/link.txt", block: b, backup: true}
+    symlink: true

@@ -8,12 +8,10 @@ dest_dir: "{{ uri_dir }}/dest"
 # holding `dest_file`) and also compare the files left there. `compare:
 # failed` only compares whether the task failed.
 #
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently;
-# `python_differs` the same for the target's Python version, since the
-# builtin's behaviour also comes from Python's urllib and ssl. The compiled
-# module always behaves like the current builtin on current Python, so in
-# those cases the case runs but isn't compared.
+# `python_differs: {before: VERSION, why: ...}` marks cases where the
+# builtin behaves differently on targets with a Python older than VERSION;
+# the compiled module behaves like it does on current Python, so on those
+# targets the case runs but isn't compared.
 uri_cases:
   # Requests and methods
   - name: GET with return_content
@@ -83,7 +81,6 @@ uri_cases:
       method: POST
       body_format: form-multipart
       body: {file: {filename: upload.txt}, file7: {filename: upload.txt, multipart_encoding: 7or8bit, mime_type: text/x-test}}
-    builtin_differs: {before: "2.19", why: 'it has no multipart_encoding and always uses base64'}
   - name: multipart file on the target
     args:
       url: "{{ http_url }}/echo"
@@ -97,7 +94,6 @@ uri_cases:
     args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {p: {mime_type: text/plain}}}
   - name: multipart with an unknown encoding
     args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: {f: {filename: upload.txt, multipart_encoding: base32}}}
-    builtin_differs: {before: "2.19", why: 'it has no multipart_encoding and ignores it'}
   - name: multipart body that is not a mapping
     args: {url: "{{ http_url }}/echo", method: POST, body_format: form-multipart, body: "a=b"}
   - name: src from the controller
@@ -116,14 +112,12 @@ uri_cases:
     args: {url: "{{ http_url }}/echo", http_agent: my-agent/1.0}
   - name: force sends cache-control
     args: {url: "{{ http_url }}/echo", force: true}
-    builtin_differs: {before: "2.17", why: 'it does not pass force on, so no cache-control header is sent'}
   - name: repeated response headers
     args: {url: "{{ http_url }}/dup-headers"}
   - name: response without a Content-Length
     args: {url: "{{ http_url }}/no-length", return_content: true}
   - name: relative Location on a 201
     args: {url: "{{ http_url }}/location?to=created/1", status_code: [201]}
-    builtin_differs: {before: "2.18", why: 'it resolves Location by appending it to the URL'}
 
   # Status codes
   - name: status not in status_code
@@ -186,10 +180,8 @@ uri_cases:
     args: {url: "{{ http_url }}/redirect/302", follow_redirects: none}
   - name: "no is deprecated"
     args: {url: "{{ http_url }}/redirect/302", follow_redirects: "no"}
-    builtin_differs: {before: "2.18", why: 'it does not deprecate yes and no'}
   - name: "yes is deprecated"
     args: {url: "{{ http_url }}/redirect/302", follow_redirects: "yes"}
-    builtin_differs: {before: "2.18", why: 'it does not deprecate yes and no'}
   - name: urllib2 turns a POST into a GET
     args: {url: "{{ http_url }}/redirect/302", method: POST, body: data, follow_redirects: urllib2}
   - name: urllib2 does not redirect a 307 POST
@@ -322,13 +314,11 @@ uri_cases:
   - name: check mode is not supported
     args: {url: "{{ http_url }}/echo"}
     check_mode: true
-    builtin_differs: {before: "2.17", why: 'the module, not the action, reports the missing check mode support'}
   - name: unsupported option
     args: {url: "{{ http_url }}/echo", bogus: 1}
   - name: invalid body_format
     args: {url: "{{ http_url }}/echo", body_format: xml}
   - name: url is required
     args: {method: GET}
-    builtin_differs: {before: "2.19", why: 'it fails with an internal error instead of validating url'}
   - name: status_code must be integers
     args: {url: "{{ http_url }}/echo", status_code: [abc]}

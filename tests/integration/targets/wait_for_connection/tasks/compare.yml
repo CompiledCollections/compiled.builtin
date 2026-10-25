@@ -1,0 +1,29 @@
+- name: "{{ case.name }} | ansible.builtin.wait_for_connection"
+  ansible.builtin.wait_for_connection:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  register: builtin
+  ignore_errors: true
+
+- name: "{{ case.name }} | compiled.builtin.wait_for_connection"
+  compiled.builtin.wait_for_connection:
+  args: "{{ case.args }}"
+  check_mode: "{{ case.check_mode | default(false) }}"
+  register: compiled
+  ignore_errors: true
+
+- name: "{{ case.name }} | results match"
+  vars:
+    # elapsed depends on how long the run took.
+    volatile: [ansible_facts, invocation, exception, module_stderr, elapsed]
+    want: "{{ builtin | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('ansible.builtin.', 'MODULE.') | replace('ansible.legacy.', 'MODULE.') }}"
+    got: "{{ compiled | dict2items | rejectattr('key', 'in', volatile) | items2dict | to_nice_json(sort_keys=true) | replace('compiled.builtin.', 'MODULE.') }}"
+  ansible.builtin.assert:
+    that:
+      - want == got
+      - (builtin.elapsed is defined) == (compiled.elapsed is defined)
+    fail_msg: >-
+      {{ case.name }}: results differ
+      ansible.builtin: {{ want }}
+      compiled.builtin: {{ got }}
+    quiet: true

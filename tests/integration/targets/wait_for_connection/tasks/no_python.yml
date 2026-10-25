@@ -1,0 +1,24 @@
+# The connection is tested with the compiled ping: with no Python
+# interpreter on the target the task returns at once, and the builtin times
+# out.
+- name: Wait without Python
+  compiled.builtin.wait_for_connection:
+    timeout: 20
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+  register: no_python
+
+- name: The builtin needs Python
+  ansible.builtin.wait_for_connection:
+    timeout: 3
+  vars:
+    ansible_python_interpreter: /nonexistent/python
+  register: builtin_no_python
+  ignore_errors: true
+
+- ansible.builtin.assert:
+    that:
+      - no_python is not failed
+      - no_python.elapsed < 20
+      - builtin_no_python is failed
+      - builtin_no_python.msg is search('timed out waiting for ping module test')

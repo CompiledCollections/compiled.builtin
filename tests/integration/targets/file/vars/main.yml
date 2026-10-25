@@ -14,10 +14,6 @@ fixed_time: "202103040506.07"
 # or of files the module made) read NOW. `compare: failed` only compares
 # whether the task failed. `python_differs: {before: VERSION, why: ...}`
 # skips the comparison on targets with an older Python.
-# `builtin_differs: {before: VERSION, why: ...}` marks cases where the
-# builtin of ansible-core older than VERSION behaves differently; the
-# compiled module always behaves like the current builtin, so on those
-# versions the case runs but isn't compared.
 file_cases:
   # state=file
   - name: file unchanged
@@ -36,7 +32,6 @@ file_cases:
   - name: file mode without diff
     args: {path: "{{ file_dir }}/file.txt", state: file, mode: "0600"}
     diff: false
-    builtin_differs: {before: "2.19", why: 'an older builtin returns the diff even without diff mode'}
   - name: file missing
     args: {path: "{{ file_dir }}/missing.txt", state: file}
   - name: file is a directory
@@ -74,7 +69,6 @@ file_cases:
     environment: {FILE_TEST_DIR: "{{ file_dir }}"}
   - name: file under a regular file
     args: {path: "{{ file_dir }}/file.txt/inner", state: file}
-    builtin_differs: {before: "2.21", why: 'an older builtin treats a path under a file as absent'}
 
   # Times
   - name: modification time fixed
@@ -136,7 +130,6 @@ file_cases:
     args: {path: "{{ file_dir }}/file.txt", state: directory}
   - name: directory under a file
     args: {path: "{{ file_dir }}/file.txt/sub", state: directory}
-    builtin_differs: {before: "2.21", why: 'an older builtin treats a path under a file as absent'}
   - name: directory through a symlink, followed
     args: {path: "{{ file_dir }}/dirlink", state: directory, mode: "0700"}
   - name: directory through a symlink, not followed
@@ -161,7 +154,6 @@ file_cases:
     args: {path: "{{ file_dir }}/new", state: directory, modification_time: "{{ fixed_time }}"}
   - name: directory created with parents and times
     args: {path: "{{ file_dir }}/new/a", state: directory, modification_time: "{{ fixed_time }}"}
-    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
   - name: recurse without state directory
     args: {path: "{{ file_dir }}/file.txt", state: file, recurse: true}
 
@@ -175,7 +167,6 @@ file_cases:
     check_mode: true
   - name: link to a missing src
     args: {path: "{{ file_dir }}/new-link", src: nowhere, state: link}
-    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
   - name: link to a missing src, forced
     args: {path: "{{ file_dir }}/new-link", src: nowhere, state: link, force: true}
   - name: link to a missing src, forced, not followed
@@ -201,7 +192,6 @@ file_cases:
     args: {path: "{{ file_dir }}/hard2", src: file.txt, state: link, force: true}
   - name: link over an empty directory
     args: {path: "{{ file_dir }}/empty", src: file.txt, state: link}
-    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
   - name: link over an empty directory, forced
     args: {path: "{{ file_dir }}/empty", src: ../file.txt, state: link, force: true}
   - name: link over a directory with files, forced
@@ -254,7 +244,6 @@ file_cases:
     args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/file.txt", state: hard, mode: "0600"}
   - name: hard link to a symlink, followed
     args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard}
-    builtin_differs: {before: "2.18", why: 'an older builtin links the symlink itself'}
   - name: hard link to a symlink, not followed
     args: {path: "{{ file_dir }}/new-hard", src: "{{ file_dir }}/link.txt", state: hard, follow: false}
     python_differs: {before: "3.14", why: 'os.link links the symlink itself before Python 3.14 on Linux'}
@@ -288,7 +277,6 @@ file_cases:
     args: {path: "{{ file_dir }}/link.txt", state: touch, modification_time: "{{ fixed_time }}", access_time: "{{ fixed_time }}"}
   - name: touch in a missing directory
     args: {path: "{{ file_dir }}/missing/new.txt", state: touch}
-    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
   - name: touch a new file with an unknown owner
     args: {path: "{{ file_dir }}/new.txt", state: touch, owner: no_such_user_xyz}
   - name: touch a new file with a bad time
@@ -320,7 +308,6 @@ file_cases:
     args: {path: "{{ file_dir }}/ro/file", state: absent}
     setup: mkdir ro && touch ro/file && chmod 0555 ro
     compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
-    builtin_differs: {before: "2.19", why: 'an older builtin words the error differently'}
   - name: absent tree with a read-only subdirectory
     args: {path: "{{ file_dir }}/tree", state: absent}
     setup: chmod 0555 tree/sub/deep
@@ -353,7 +340,6 @@ file_cases:
     args: {path: "{{ file_dir }}/locked/inner", state: touch}
     setup: mkdir locked && chmod 0 locked
     compare: "{{ 'failed' if lookup('pipe', 'id -u') == '0' else '' }}"
-    builtin_differs: {before: "2.21", why: 'an older builtin doesn''t warn about the permissions'}
   - name: name alias
     args: {name: "{{ file_dir }}/file.txt", state: file}
   - name: dest alias

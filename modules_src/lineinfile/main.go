@@ -1,7 +1,7 @@
 // Lineinfile equivalent module, written in Go. A close port of
 // ansible.builtin.lineinfile; regular expressions use Python syntax,
 // translated to Go's RE2 engine (see internal/ansible/pyre.go).
-package main
+package lineinfile
 
 import (
 	"fmt"
@@ -398,7 +398,8 @@ func pyDirname(p string) string {
 	return head
 }
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	if args.State == "" {
 		args.State = "present"

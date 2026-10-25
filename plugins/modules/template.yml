@@ -1,0 +1,160 @@
+DOCUMENTATION:
+  module: template
+  short_description: Template a file out to a target host
+  description:
+  - 'Compiled Go replacement for M(ansible.builtin.template), with the same options and results. It does not need Python on the target: the template
+    is rendered on the controller and written with M(compiled.builtin.copy).'
+  version_added: 1.0.0
+  options:
+    follow:
+      description:
+      - Determine whether symbolic links should be followed.
+      - When set to V(true) symbolic links will be followed, if they exist.
+      - When set to V(false) symbolic links will not be followed.
+      - Previous to Ansible 2.4, this was hardcoded as V(true).
+      type: bool
+      default: false
+  extends_documentation_fragment:
+  - ansible.builtin.action_common_attributes
+  - ansible.builtin.action_common_attributes.flow
+  - ansible.builtin.action_common_attributes.files
+  - ansible.builtin.backup
+  - ansible.builtin.files
+  - ansible.builtin.template_common
+  - ansible.builtin.validate
+  attributes:
+    action:
+      support: full
+      description: Indicates this has a corresponding action plugin so some parts of the options can be executed on the controller.
+    async:
+      support: none
+      description: Supports being used with the C(async) keyword.
+    bypass_host_loop:
+      support: none
+      description: Forces a "global" task that does not execute per host.
+    check_mode:
+      support: full
+      description: Can run in check_mode and return changed status prediction without modifying target.
+    diff_mode:
+      support: full
+      description: Will return details on what has changed (or possibly needs changing in check_mode), when in diff mode.
+    platform:
+      platforms: posix
+      description: Target OS/families that can be operated against.
+    safe_file_operations:
+      support: full
+      description: Uses Ansible's mechanism to safely write files, keeping ownership, mode and SELinux context.
+    vault:
+      support: full
+      description: Can automatically decrypt Ansible vaulted files.
+  notes:
+  - For Windows you can use M(ansible.windows.win_template) which uses V(\\r\\n) as O(newline_sequence) by default.
+  - The C(jinja2_native) setting has no effect. Native types are never used in the M(ansible.builtin.template) module which is by design used
+    for generating text files. For working with templates and utilizing Jinja2 native types see the O(ansible.builtin.template#lookup:jinja2_native)
+    parameter of the P(ansible.builtin.template#lookup) lookup.
+  seealso:
+  - module: ansible.builtin.template
+  - module: ansible.builtin.copy
+  - module: ansible.windows.win_copy
+  - module: ansible.windows.win_template
+  author:
+  - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Template a file to /etc/file.conf
+    compiled.builtin.template:
+      src: /mytemplates/foo.j2
+      dest: /etc/file.conf
+      owner: bin
+      group: wheel
+      mode: '0644'
+
+  - name: Template a file, using symbolic modes (equivalent to 0644)
+    compiled.builtin.template:
+      src: /mytemplates/foo.j2
+      dest: /etc/file.conf
+      owner: bin
+      group: wheel
+      mode: u=rw,g=r,o=r
+
+  - name: Copy a version of named.conf that is dependent on the OS. setype obtained by doing ls -Z /etc/named.conf on original file
+    compiled.builtin.template:
+      src: named.conf_{{ ansible_os_family }}.j2
+      dest: /etc/named.conf
+      group: named
+      setype: named_conf_t
+      mode: '0640'
+
+  - name: Create a DOS-style text file from a template
+    compiled.builtin.template:
+      src: config.ini.j2
+      dest: /share/windows/config.ini
+      newline_sequence: '\r\n'
+
+  - name: Copy a new sudoers file into place, after passing validation with visudo
+    compiled.builtin.template:
+      src: /mine/sudoers
+      dest: /etc/sudoers
+      validate: /usr/sbin/visudo -cf %s
+
+  - name: Update sshd configuration safely, avoid locking yourself out
+    compiled.builtin.template:
+      src: etc/ssh/sshd_config.j2
+      dest: /etc/ssh/sshd_config
+      owner: root
+      group: root
+      mode: '0600'
+      validate: /usr/sbin/sshd -t -f %s
+      backup: yes
+
+RETURN:
+  dest:
+    description: Destination file/path, equal to the value passed to I(dest).
+    returned: success
+    type: str
+    sample: /path/to/file.txt
+  checksum:
+    description: SHA1 checksum of the rendered file
+    returned: always
+    type: str
+    sample: 373296322247ab85d26d5d1257772757e7afd172
+  uid:
+    description: Numeric id representing the file owner
+    returned: success
+    type: int
+    sample: 1003
+  gid:
+    description: Numeric id representing the group of the owner
+    returned: success
+    type: int
+    sample: 1003
+  owner:
+    description: User name of owner
+    returned: success
+    type: str
+    sample: httpd
+  group:
+    description: Group name of owner
+    returned: success
+    type: str
+    sample: www-data
+  md5sum:
+    description: MD5 checksum of the rendered file
+    returned: changed
+    type: str
+    sample: d41d8cd98f00b204e9800998ecf8427e
+  mode:
+    description: Unix permissions of the file in octal representation as a string
+    returned: success
+    type: str
+    sample: 1755
+  size:
+    description: Size of the rendered file in bytes
+    returned: success
+    type: int
+    sample: 42
+  src:
+    description: Source file used for the copy on the target machine.
+    returned: changed
+    type: str
+    sample: /home/httpd/.ansible/tmp/ansible-tmp-1423796390.97-147729857856000/source

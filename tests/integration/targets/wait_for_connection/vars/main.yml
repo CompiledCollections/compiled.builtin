@@ -1,0 +1,17 @@
+# Each case runs ansible.builtin.wait_for_connection and
+# compiled.builtin.wait_for_connection with `args` and compares the results,
+# except for how long they took.
+wait_for_connection_cases:
+  - name: defaults
+    args: {}
+  - name: all options
+    args: {connect_timeout: 3, delay: 1, sleep: 2, timeout: 10}
+  - name: options as strings
+    args: {connect_timeout: "3", timeout: "10"}
+  - name: check mode is skipped
+    args: {}
+    check_mode: true
+  - name: unsupported option
+    args: {bogus: true}
+  - name: invalid integer
+    args: {timeout: abc}

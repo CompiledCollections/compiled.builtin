@@ -1,5 +1,5 @@
 // File equivalent module, written in Go. Mirrors ansible.builtin.file.
-package main
+package file
 
 import (
 	"bytes"
@@ -38,7 +38,8 @@ var (
 	touched string
 )
 
-func main() {
+// Main runs the module; the multi-call binary in modules_src/main.go calls it.
+func Main() {
 	ansible.ReadArgs(&args)
 	follow = args.Follow == nil || *args.Follow
 	args.Follow = &follow

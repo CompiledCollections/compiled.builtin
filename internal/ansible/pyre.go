@@ -2,9 +2,11 @@ package ansible
 
 import (
 	"fmt"
+	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -37,12 +39,19 @@ func CompilePython(pat string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-func translatePython(pat string) (string, error) {
-	p := []rune(pat)
-	i := 0
+// PythonGlobalFlags returns the inline flags a Python pattern sets for the
+// whole pattern, such as "m" for (?m): the letters of re.MULTILINE and
+// friends that would show in the compiled pattern's flags.
+func PythonGlobalFlags(pat string) string {
+	flags, _ := globalFlags([]rune(pat))
+	return flags
+}
 
-	// Global inline flags must come first in Python 3.11+.
+// globalFlags reads the global inline flags at the start of p, which must
+// come first in Python 3.11+, and returns them and where the pattern goes on.
+func globalFlags(p []rune) (string, int) {
 	var flags string
+	i := 0
 	for i+2 < len(p) && p[i] == '(' && p[i+1] == '?' && strings.ContainsRune("aiLmsux", p[i+2]) {
 		j := i + 2
 		for j < len(p) && strings.ContainsRune("aiLmsux", p[j]) {
@@ -54,6 +63,12 @@ func translatePython(pat string) (string, error) {
 		flags += string(p[i+2 : j])
 		i = j + 1
 	}
+	return flags, i
+}
+
+func translatePython(pat string) (string, error) {
+	p := []rune(pat)
+	flags, i := globalFlags(p)
 	if strings.ContainsAny(flags, "x") {
 		return "", unsupported(pat, "verbose mode (?x)")
 	}
@@ -274,95 +289,283 @@ func translateEscape(pat string, p []rune, inClass, ascii bool) (string, int, er
 
 func isOct(r rune) bool { return r >= '0' && r <= '7' }
 
-func unsupported(pat, what string) error {
-	return fmt.Errorf("regular expression %q uses %s, which Go's RE2 engine does not support", pat, what)
+// UnsupportedError is a valid Python pattern using something RE2 can't do.
+type UnsupportedError struct{ Pattern, What string }
+
+func (e *UnsupportedError) Error() string {
+	return fmt.Sprintf("regular expression %q uses %s, which Go's RE2 engine does not support", e.Pattern, e.What)
+}
+
+func unsupported(pat, what string) error { return &UnsupportedError{pat, what} }
+
+// TemplateError is a re.error raised for a replacement template, with
+// Python's message and position.
+type TemplateError struct{ Msg string }
+
+func (e *TemplateError) Error() string { return e.Msg }
+
+// UnknownGroupError is the IndexError Python raises for a template naming
+// a group the pattern doesn't have.
+type UnknownGroupError struct{ Name string }
+
+func (e *UnknownGroupError) Error() string { return "unknown group name " + PyRepr(e.Name) }
+
+// Template is a parsed replacement template: literal text and group references.
+type Template struct {
+	parts []templatePart
+}
+
+type templatePart struct {
+	literal string
+	group   int // -1 for literal text
+}
+
+// ParseTemplate parses a re replacement template as Python's
+// _parser.parse_template does: \1 and \g<name> group references, octal
+// escapes, \n, \t, \\ and friends. Errors are a *TemplateError or an
+// *UnknownGroupError, raised as Python raises them: before any matching.
+func ParseTemplate(re *regexp.Regexp, template string) (*Template, error) {
+	t := []rune(template)
+	var parts []templatePart
+	var lit strings.Builder
+	flush := func() {
+		if lit.Len() > 0 {
+			parts = append(parts, templatePart{literal: lit.String(), group: -1})
+			lit.Reset()
+		}
+	}
+	fail := func(pos int, format string, a ...any) error {
+		return &TemplateError{fmt.Sprintf(format, a...) + fmt.Sprintf(" at position %d", pos)}
+	}
+	addGroup := func(index *big.Int, pos int) error {
+		if !index.IsInt64() || index.Int64() > int64(re.NumSubexp()) {
+			return fail(pos, "invalid group reference %s", index.String())
+		}
+		flush()
+		parts = append(parts, templatePart{group: int(index.Int64())})
+		return nil
+	}
+	escapes := map[rune]string{'a': "\a", 'b': "\b", 'f': "\f", 'n': "\n", 'r': "\r", 't': "\t", 'v': "\v", '\\': `\`}
+
+	for i := 0; i < len(t); i++ {
+		if t[i] != '\\' {
+			lit.WriteRune(t[i])
+			continue
+		}
+		if i+1 >= len(t) {
+			return nil, fail(len(t)-1, "bad escape (end of pattern)")
+		}
+		c := t[i+1]
+		next := i + 2 // what Python's tokenizer reads next
+		peek := func(j int) rune {
+			if j < len(t) {
+				return t[j]
+			}
+			return 0
+		}
+		switch {
+		case c == 'g':
+			if peek(next) != '<' {
+				return nil, fail(next, "missing <")
+			}
+			start := next + 1
+			end := start
+			for end < len(t) && t[end] != '>' {
+				end++
+			}
+			name := string(t[start:end])
+			if end >= len(t) {
+				if name == "" {
+					return nil, fail(end, "missing group name")
+				}
+				return nil, fail(start, "missing >, unterminated name")
+			}
+			if name == "" {
+				return nil, fail(start, "missing group name")
+			}
+			if isASCIIDigits(name) {
+				index, _ := new(big.Int).SetString(name, 10)
+				if err := addGroup(index, start); err != nil {
+					return nil, err
+				}
+			} else {
+				if !isIdentifier(name) {
+					return nil, fail(start, "bad character in group name %s", PyRepr(name))
+				}
+				g := re.SubexpIndex(name)
+				if g < 0 {
+					return nil, &UnknownGroupError{name}
+				}
+				flush()
+				parts = append(parts, templatePart{group: g})
+			}
+			i = end
+		case c == '0':
+			n := 1
+			for n < 3 && isOct(peek(i+1+n)) {
+				n++
+			}
+			v, _ := strconv.ParseUint(string(t[i+1:i+1+n]), 8, 32)
+			lit.WriteRune(rune(v & 0xff))
+			i += n
+		case c >= '1' && c <= '9':
+			digits := string(c)
+			if d := peek(next); d >= '0' && d <= '9' {
+				digits += string(d)
+				if isOct(c) && isOct(d) && isOct(peek(next+1)) {
+					digits += string(peek(next + 1))
+					v, _ := strconv.ParseUint(digits, 8, 32)
+					if v > 0o377 {
+						return nil, fail(i, "octal escape value \\%s outside of range 0-0o377", digits)
+					}
+					lit.WriteRune(rune(v))
+					i += 3
+					continue
+				}
+			}
+			index, _ := new(big.Int).SetString(digits, 10)
+			if err := addGroup(index, i+1); err != nil {
+				return nil, err
+			}
+			i += len(digits)
+		case escapes[c] != "":
+			lit.WriteString(escapes[c])
+			i++
+		case c < utf8.RuneSelf && (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'):
+			return nil, fail(i, `bad escape \%c`, c)
+		default:
+			lit.WriteRune('\\')
+			lit.WriteRune(c)
+			i++
+		}
+	}
+	flush()
+	return &Template{parts: parts}, nil
+}
+
+// Expand fills the template in for the match of a pattern in s at loc;
+// groups that did not participate are empty.
+func (t *Template) Expand(s string, loc []int) string {
+	var b strings.Builder
+	for _, p := range t.parts {
+		if p.group < 0 {
+			b.WriteString(p.literal)
+		} else if loc[2*p.group] >= 0 {
+			b.WriteString(s[loc[2*p.group]:loc[2*p.group+1]])
+		}
+	}
+	return b.String()
+}
+
+func isASCIIDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
+}
+
+// isIdentifier approximates str.isidentifier.
+func isIdentifier(s string) bool {
+	for i, r := range s {
+		switch {
+		case r == '_' || unicode.IsLetter(r) || unicode.Is(unicode.Nl, r):
+		case i > 0 && (unicode.IsDigit(r) || unicode.In(r, unicode.Mn, unicode.Mc, unicode.Pc)):
+		default:
+			return false
+		}
+	}
+	return s != ""
+}
+
+// PythonRegexp is a Python pattern compiled for Go, which can also list its
+// matches the way Python's re does.
+type PythonRegexp struct {
+	*regexp.Regexp
+	// at is the pattern after one character of context, anchored: it tells
+	// what the pattern matches at a given position.
+	at *regexp.Regexp
+}
+
+// CompilePythonRegexp is CompilePython, returning a *PythonRegexp.
+func CompilePythonRegexp(pat string) (*PythonRegexp, error) {
+	tr, err := translatePython(pat)
+	if err != nil {
+		return nil, err
+	}
+	re, err := regexp.Compile(tr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pat, err)
+	}
+	at, err := regexp.Compile(`\A(?s:.)(?:` + tr + `)`)
+	if err != nil {
+		return nil, fmt.Errorf("invalid regular expression %q: %v", pat, err)
+	}
+	return &PythonRegexp{Regexp: re, at: at}, nil
+}
+
+// FindAllPython returns the submatch indexes of every match in s, as
+// re.finditer finds them. Go skips an empty match right after a non-empty
+// one; Python 3.7+ keeps it.
+func (p *PythonRegexp) FindAllPython(s string) [][]int {
+	found := p.FindAllStringSubmatchIndex(s, -1)
+	var out [][]int
+	for i, m := range found {
+		out = append(out, m)
+		end := m[1]
+		if m[0] == end || i+1 < len(found) && found[i+1][0] == end {
+			continue
+		}
+		if empty := p.emptyAt(s, end); empty != nil {
+			out = append(out, empty)
+		}
+	}
+	return out
+}
+
+// emptyAt returns the match at pos if it is empty, else nil. pos > 0.
+func (p *PythonRegexp) emptyAt(s string, pos int) []int {
+	_, size := utf8.DecodeLastRuneInString(s[:pos])
+	from := pos - size
+	loc := p.at.FindStringSubmatchIndex(s[from:])
+	if loc == nil || loc[1] != size {
+		return nil
+	}
+	out := make([]int, len(loc))
+	out[0], out[1] = pos, pos
+	for i := 2; i < len(loc); i++ {
+		if loc[i] >= 0 {
+			out[i] = loc[i] + from
+		} else {
+			out[i] = -1
+		}
+	}
+	return out
+}
+
+// SubnPython is re.subn(pattern, template, s): s with every match replaced
+// by the expanded template, and the number of replacements.
+func (p *PythonRegexp) SubnPython(t *Template, s string) (string, int) {
+	var b strings.Builder
+	last, n := 0, 0
+	for _, m := range p.FindAllPython(s) {
+		b.WriteString(s[last:m[0]])
+		b.WriteString(t.Expand(s, m))
+		last = m[1]
+		n++
+	}
+	b.WriteString(s[last:])
+	return b.String(), n
 }
 
 // ExpandPython expands a Python re replacement template (as match.expand
 // does) for the match of re in s at loc: \1, \g<1>, \g<name>, and the
 // escapes \n, \t, \\ and friends. Groups that did not participate are empty.
 func ExpandPython(re *regexp.Regexp, template, s string, loc []int) (string, error) {
-	group := func(g, pos int) (string, error) {
-		if g < 0 || g > re.NumSubexp() {
-			return "", fmt.Errorf("invalid group reference %d at position %d", g, pos)
-		}
-		if loc[2*g] < 0 {
-			return "", nil
-		}
-		return s[loc[2*g]:loc[2*g+1]], nil
+	t, err := ParseTemplate(re, template)
+	if err != nil {
+		return "", err
 	}
-	escapes := map[rune]string{'a': "\a", 'b': "\b", 'f': "\f", 'n': "\n", 'r': "\r", 't': "\t", 'v': "\v", '\\': `\`}
-
-	t := []rune(template)
-	var b strings.Builder
-	for i := 0; i < len(t); i++ {
-		if t[i] != '\\' {
-			b.WriteRune(t[i])
-			continue
-		}
-		if i+1 >= len(t) {
-			return "", fmt.Errorf("bad escape (end of pattern) at position %d", i)
-		}
-		c := t[i+1]
-		switch {
-		case c == 'g':
-			rest := string(t[i+2:])
-			end := strings.IndexRune(rest, '>')
-			if !strings.HasPrefix(rest, "<") || end < 0 {
-				return "", fmt.Errorf("missing group name in template")
-			}
-			name := rest[1:end]
-			var g int
-			if n, err := strconv.Atoi(name); err == nil {
-				g = n
-			} else if g = re.SubexpIndex(name); g < 0 {
-				return "", fmt.Errorf("unknown group name '%s'", name)
-			}
-			v, err := group(g, i+3)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(v)
-			i += 2 + utf8.RuneCountInString(rest[:end+1]) - 1
-		case c == '0':
-			n := 1
-			for n < 3 && i+1+n < len(t) && isOct(t[i+1+n]) {
-				n++
-			}
-			v, _ := strconv.ParseUint(string(t[i+1:i+1+n]), 8, 32)
-			b.WriteRune(rune(v))
-			i += n
-		case c >= '1' && c <= '9':
-			n := 1
-			if i+2 < len(t) && t[i+2] >= '0' && t[i+2] <= '9' {
-				if i+3 < len(t) && isOct(c) && isOct(t[i+2]) && isOct(t[i+3]) {
-					v, _ := strconv.ParseUint(string(t[i+1:i+4]), 8, 32)
-					if v > 0o377 {
-						return "", fmt.Errorf("octal escape value \\%s outside of range 0-0o377", string(t[i+1:i+4]))
-					}
-					b.WriteRune(rune(v))
-					i += 3
-					continue
-				}
-				n = 2
-			}
-			g, _ := strconv.Atoi(string(t[i+1 : i+1+n]))
-			v, err := group(g, i+1)
-			if err != nil {
-				return "", err
-			}
-			b.WriteString(v)
-			i += n
-		case escapes[c] != "":
-			b.WriteString(escapes[c])
-			i++
-		case c < utf8.RuneSelf && (c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'):
-			return "", fmt.Errorf(`bad escape \%c at position %d`, c, i)
-		default:
-			b.WriteRune('\\')
-			b.WriteRune(c)
-			i++
-		}
-	}
-	return b.String(), nil
+	return t.Expand(s, loc), nil
 }

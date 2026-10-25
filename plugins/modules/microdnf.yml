@@ -1,0 +1,103 @@
+DOCUMENTATION:
+  module: microdnf
+  short_description: Manage packages with microdnf
+  description:
+    - Installs, upgrades and removes RPM packages with C(microdnf), the package manager of minimal Red Hat Enterprise Linux,
+      UBI and Fedora images, without Python on the target.
+    - It takes the options of M(ansible.builtin.package), which can't manage packages on these images; it picks the
+      M(ansible.builtin.dnf) or M(ansible.builtin.dnf5) module, which need Python and their package manager's Python bindings.
+    - Works with classic microdnf (RHEL and UBI 8 to 10) and with dnf5, which Fedora installs as C(microdnf).
+  version_added: 1.0.0
+  options:
+    name:
+      description:
+        - Package names, as C(microdnf install) takes them (V(tar), V(tar-1.34)).
+        - A comma-separated string is split into names, as for M(ansible.builtin.package).
+      type: list
+      elements: str
+      required: true
+    state:
+      description:
+        - V(present) (or V(installed)) installs the packages if they aren't installed.
+        - V(latest) installs them, or upgrades them to the newest version available.
+        - V(absent) (or V(removed)) removes them. Packages that aren't installed (according to C(rpm -q)) are left out.
+      type: str
+      required: true
+      choices: [present, installed, latest, absent, removed]
+    use:
+      description:
+        - The package manager to use. Only V(auto) and V(microdnf) are accepted, for compatibility with M(ansible.builtin.package).
+      type: str
+      default: auto
+  extends_documentation_fragment:
+    - ansible.builtin.action_common_attributes
+  attributes:
+    check_mode:
+      description: Can run in check_mode and return changed status prediction without modifying target.
+      details: Runs C(microdnf --assumeno), which downloads the repository metadata but changes no packages.
+      support: full
+    diff_mode:
+      description: Will return details on what has changed (or possibly needs changing in check_mode), when in diff mode.
+      support: none
+    platform:
+      description: Target OS/families that can be operated against.
+      platforms: posix
+  notes:
+    - Changing packages needs root, so use O(ignore:become) unless you connect as root.
+    - Needs C(rpm) on the target, which minimal images have, to see which packages are installed.
+    - The results list what changed, from the installed packages before and after; in check mode, from microdnf's transaction table.
+  seealso:
+    - module: ansible.builtin.package
+    - module: compiled.builtin.apk
+  author:
+    - Hugo (@hugonz)
+
+EXAMPLES: |
+  - name: Install tar and gzip
+    compiled.builtin.microdnf:
+      name: [tar, gzip]
+      state: present
+    become: true
+
+  - name: Keep openssl up to date
+    compiled.builtin.microdnf:
+      name: openssl
+      state: latest
+    become: true
+
+  - name: Remove tar
+    compiled.builtin.microdnf:
+      name: tar
+      state: absent
+    become: true
+
+RETURN:
+  msg:
+    description: V(Nothing to do) when nothing changed; in check mode with changes, that none were made.
+    returned: always
+    type: str
+    sample: Nothing to do
+  results:
+    description: What changed, or would change in check mode, for each package, dependencies included.
+    returned: always
+    type: list
+    elements: str
+    sample: ["Installed: tar-2:1.34-13.el9_8.x86_64"]
+  rc:
+    description: The exit code of microdnf.
+    returned: always
+    type: int
+    sample: 0
+  stdout:
+    description: The output of microdnf when it failed.
+    returned: failure
+    type: str
+  stderr:
+    description: The error output of microdnf when it failed.
+    returned: failure
+    type: str
+  cmd:
+    description: The microdnf command that failed.
+    returned: failure
+    type: list
+    elements: str

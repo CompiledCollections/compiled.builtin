@@ -1,0 +1,9 @@
+- name: Compare compiled.builtin.wait_for_connection with ansible.builtin.wait_for_connection
+  ansible.builtin.include_tasks: compare.yml
+  loop: "{{ wait_for_connection_cases }}"
+  loop_control:
+    loop_var: case
+    label: "{{ case.name }}"
+
+- name: Runs without Python on the target
+  ansible.builtin.include_tasks: no_python.yml

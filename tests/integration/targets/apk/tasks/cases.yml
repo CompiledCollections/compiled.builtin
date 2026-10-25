@@ -1,0 +1,219 @@
+# Each step runs compiled.builtin.apk in the container, then checks its
+# result and, with raw (no Python needed), what is installed.
+- name: tar starts out absent
+  ansible.builtin.raw: apk info -e tar && apk del tar; true
+  delegate_to: "{{ container }}"
+  changed_when: false
+
+- name: Install in check mode
+  compiled.builtin.apk: {name: tar, state: present}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: apk info -e tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.msg == 'Check mode: No changes made, but would have if not in check mode'"
+      - "r.results | select('match', 'Installed: tar \\(') | list | length == 1"
+      - q.rc != 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Install
+  compiled.builtin.apk: {name: tar, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: apk info -e tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - r.msg == ''
+      - r.rc == 0
+      - "r.results | select('match', 'Installed: tar \\(') | list | length == 1"
+      # tar's dependencies are listed too
+      - r.results | length > 1
+      - q.rc == 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Install again
+  compiled.builtin.apk: {name: tar, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+      - r.results == []
+    fail_msg: "{{ r | to_json }}"
+
+- name: installed and a list of names
+  compiled.builtin.apk: {name: [tar, busybox], state: installed}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that: r is not changed
+    fail_msg: "{{ r | to_json }}"
+
+- name: latest when it is already the latest
+  compiled.builtin.apk: {name: tar, state: latest}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that: r is not changed
+    fail_msg: "{{ r | to_json }}"
+
+- name: A version constraint already met
+  compiled.builtin.apk: {name: "tar>1", state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that: r is not changed
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove in check mode
+  compiled.builtin.apk: {name: tar, state: absent}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: apk info -e tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: tar \\(') | list | length == 1"
+      - q.rc == 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove
+  compiled.builtin.apk: {name: tar, state: absent}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.raw: apk info -e tar
+  delegate_to: "{{ container }}"
+  register: q
+  failed_when: false
+  changed_when: false
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: tar \\(') | list | length == 1"
+      - q.rc != 0
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove again, with removed
+  compiled.builtin.apk: {name: [tar, nosuchpackage], state: removed}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+    fail_msg: "{{ r | to_json }}"
+
+- name: latest installs what's missing, from comma-separated names
+  compiled.builtin.apk: {name: "tar,xz", state: latest}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Installed: tar \\(') | list | length == 1"
+      - "r.results | select('match', 'Installed: xz \\(') | list | length == 1"
+    fail_msg: "{{ r | to_json }}"
+
+- name: Remove both
+  compiled.builtin.apk: {name: [tar, xz], state: absent}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is changed
+      - "r.results | select('match', 'Removed: (tar|xz) \\(') | list | length == 2"
+    fail_msg: "{{ r | to_json }}"
+
+- name: A package that doesn't exist
+  compiled.builtin.apk: {name: nosuchpackage, state: present}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.rc == 1
+      - r.msg is search('unable to select packages')
+      - r.cmd[-1] == 'nosuchpackage'
+    fail_msg: "{{ r | to_json }}"
+
+- name: A package that doesn't exist in check mode
+  compiled.builtin.apk: {name: nosuchpackage, state: present}
+  check_mode: true
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('unable to select packages')
+    fail_msg: "{{ r | to_json }}"
+
+- name: No names
+  compiled.builtin.apk: {name: [], state: present}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that:
+      - r is not changed
+      - r.msg == 'Nothing to do'
+    fail_msg: "{{ r | to_json }}"
+
+- name: Another package manager
+  compiled.builtin.apk: {name: tar, state: present, use: dnf}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('use must be auto or apk')
+    fail_msg: "{{ r | to_json }}"
+
+- name: use apk
+  compiled.builtin.apk: {name: busybox, state: present, use: apk}
+  delegate_to: "{{ container }}"
+  register: r
+- ansible.builtin.assert:
+    that: r is not changed
+    fail_msg: "{{ r | to_json }}"
+
+- name: An invalid state
+  compiled.builtin.apk: {name: tar, state: maybe}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('value of state must be one of')
+    fail_msg: "{{ r | to_json }}"
+
+- name: state is required
+  compiled.builtin.apk: {name: tar}
+  delegate_to: "{{ container }}"
+  register: r
+  ignore_errors: true
+- ansible.builtin.assert:
+    that:
+      - r is failed
+      - r.msg is search('missing required arguments. state')
+    fail_msg: "{{ r | to_json }}"

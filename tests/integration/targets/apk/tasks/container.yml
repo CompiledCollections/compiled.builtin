@@ -1,0 +1,26 @@
+- name: Run the cases
+  block:
+    - ansible.builtin.include_role:
+        name: setup_podman
+        tasks_from: start
+      vars:
+        container: "{{ target.container }}"
+        image: "{{ target.image }}"
+
+    # state=latest upgrades a package's dependencies too, so an image older
+    # than its repository would make "latest when it is already the latest"
+    # change something. --no-cache leaves the package index as it was.
+    - name: Bring the image's packages up to date
+      ansible.builtin.raw: apk upgrade --no-cache
+      delegate_to: "{{ target.container }}"
+
+    - name: Cases
+      ansible.builtin.include_tasks: cases.yml
+      vars:
+        container: "{{ target.container }}"
+  always:
+    - ansible.builtin.include_role:
+        name: setup_podman
+        tasks_from: stop
+      vars:
+        container: "{{ target.container }}"

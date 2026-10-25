@@ -1,0 +1,15 @@
+# Every file left under dest: type, permissions, owner, group, link count,
+# modification time and link target, then contents. Times from this run read
+# NOW. Access times aren't compared: whether reading a source moves it
+# depends on how the target's Python copies data and on the filesystem.
+- name: List the files
+  ansible.builtin.shell:
+    cmd: |
+      cd "{{ tpl_dir }}" || exit 0
+      find . -mindepth 1 \( -type l -printf '%p %y %u %g %Ts %l\n' -o -printf '%p %y %m %u %g %n %Ts\n' \) 2>/dev/null \
+        | LC_ALL=C sort | sed -E 's/ 1[7-9][0-9]{8}\b/ NOW/g; s/\.[0-9]+\.[0-9]{4}-[0-9]{2}-[0-9]{2}@[0-9:]{8}~/.BACKUP~/'
+      find . -mindepth 1 -type f -readable 2>/dev/null | LC_ALL=C sort | while read -r f; do echo "$f $(base64 -w0 < "$f")"; done \
+        | sed -E 's/\.[0-9]+\.[0-9]{4}-[0-9]{2}-[0-9]{2}@[0-9:]{8}~/.BACKUP~/'
+    executable: /bin/bash
+  register: captured
+  changed_when: false

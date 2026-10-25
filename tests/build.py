@@ -2,7 +2,7 @@
 # GNU General Public License v2.0+ (see https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt)
 """Build and test the compiled.builtin modules. Run from anywhere:
 
-    python3 tests/build.py build [--platform linux/amd64 ...] [--module ping ...]
+    python3 tests/build.py build [--platform linux/amd64 ...]
     python3 tests/build.py unit
     python3 tests/build.py sanity
     python3 tests/build.py integration [TARGET ...]
@@ -11,9 +11,10 @@
     python3 tests/build.py testdocs [--check]
     python3 tests/build.py clean
 
-build        Writes stripped, UPX-packed binaries to plugins/modules, the same
-             way the action plugin compiles at runtime. Only linux/amd64 is
-             shipped; build other platforms only to try them out locally.
+build        Writes the stripped, UPX-packed multi-call binary, which holds
+             every module, to plugins/modules, the same way the action plugin
+             compiles at runtime. Only linux/amd64 is shipped; build other
+             platforms only to try them out locally.
 unit         go vet and go test. The Python-compatibility helpers (shlex,
              glob, $VAR expansion, regex translation...) are checked against
              results recorded from CPython in internal/ansible/testdata.
@@ -54,23 +55,21 @@ _spec.loader.exec_module(go_build)
 
 def cmd_build(args):
     platforms = [p.replace('/', '_') for p in args.platform or SHIPPED_PLATFORMS]
-    modules = args.module or go_build.modules()
 
     for platform in platforms:
         if platform in go_build.UPX_PLATFORMS and not go_build.can_pack(platform):
             # Shipped binaries must always be packed; the runtime path only warns.
             sys.exit('upx is not installed; install it to build packed binaries')
 
-    for module in modules:
-        for platform in platforms:
-            dest = os.path.join(go_build.MODULES_DIR, '%s_%s' % (module, platform))
-            try:
-                go_build.build(module, platform, dest)
-            except go_build.BuildError as e:
-                sys.exit('%s %s: %s' % (module, platform, e))
-            packed = 'packed' if go_build.can_pack(platform) else 'not packed, unsupported by upx'
-            print('%-40s %6.0f KiB  (%s)' % (os.path.relpath(dest, COLLECTION_ROOT),
-                                             os.path.getsize(dest) / 1024, packed))
+    for platform in platforms:
+        dest = os.path.join(go_build.MODULES_DIR, go_build.binary_name(platform))
+        try:
+            go_build.build(platform, dest)
+        except go_build.BuildError as e:
+            sys.exit('%s: %s' % (platform, e))
+        packed = 'packed' if go_build.can_pack(platform) else 'not packed, unsupported by upx'
+        print('%-40s %6.0f KiB  (%s)' % (os.path.relpath(dest, COLLECTION_ROOT),
+                                         os.path.getsize(dest) / 1024, packed))
 
 
 def cmd_unit(args):
@@ -104,7 +103,7 @@ def git_ignored(path):
 
 def cmd_integration(args):
     # Shipped binaries win over the source, so never test stale ones.
-    cmd_build(argparse.Namespace(platform=None, module=None))
+    cmd_build(argparse.Namespace(platform=None))
     with tempfile.TemporaryDirectory() as tmp:
         # Keep runtime compiles out of the user's cache.
         env = dict(os.environ, COMPILED_BUILTIN_CACHE_DIR=os.path.join(tmp, 'cache'))
@@ -184,13 +183,18 @@ behind must also be identical: content, mode, owner, group, link count,
 times, symlinks and backups (times the run sets to now, and access times of
 symlinks, which move whenever they're read, aren't compared). Cases marked
 *fails only* just check that both fail, because the error text comes from
-Python's or Go's own libraries. Cases marked *not compared before
-ansible-core X* (or *Python X* on the target) still run there, but older
-builtins, or the urllib and ssl of older Pythons they rely on, behave
-differently; the compiled modules always behave like the current builtin.
+Python's or Go's own libraries. Cases marked *not compared before Python
+X* (on the target) still run there, but the builtin, or the urllib and ssl
+it relies on, behaves differently on older Pythons; the compiled modules
+always behave like the builtin on current Python. Only the current
+ansible-core (2.21) is tested.
 
-To add a case, add an entry to the target's `vars/main.yml` and run
-`python3 tests/build.py testdocs`.
+apk and microdnf have no builtin to compare with: their targets run the
+module in containers of the distributions it is for (with podman, through
+the test-only connection in `setup_podman`) and check what it did.
+
+To add a case, add an entry to the target's `vars/main.yml` (or a step to
+`tasks/cases.yml`) and run `python3 tests/build.py testdocs`.
 """
 
 CASE_LABELS = {
@@ -219,10 +223,9 @@ def case_line(name, keys):
             parts.append('no path given')
         elif key == 'symlink':
             parts.append(CASE_LABELS[key])
-        elif key in ('builtin_differs', 'python_differs'):
+        elif key == 'python_differs':
             m = re.match(r"""\{before: "([^"]+)", why: '(.*)'\}$""", value)
-            what = 'ansible-core' if key == 'builtin_differs' else 'Python (on the target)'
-            parts.append('*not compared before %s %s: %s*' % (what, m.group(1), m.group(2).replace("''", "'"))
+            parts.append('*not compared before Python (on the target) %s: %s*' % (m.group(1), m.group(2).replace("''", "'"))
                          if m else '%s %s' % (key, code(value)))
         else:
             parts.append('%s %s' % (CASE_LABELS.get(key, key), code(value)))
@@ -300,11 +303,25 @@ def unit_section():
     return '\n'.join(['- ' + line for line in lines] + ['', 'Results recorded from CPython (and, for uri, ansible-core), by kind:', ''] + recorded)
 
 
+def leading_comment(path):
+    """The comment lines a file starts with, joined."""
+    comment = []
+    with open(path) as f:
+        for line in f:
+            if not line.startswith('#'):
+                break
+            comment.append(line[1:].strip())
+    return ' '.join(comment)
+
+
 def render_testdocs():
     root = os.path.join(HERE, 'integration', 'targets')
     targets = sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, 'vars', 'main.yml')))
     helpers = sorted(d for d in os.listdir(root) if d.startswith('setup_'))
-    toc = '\n'.join('  - [%s](#%s)' % (t, t) for t in targets)
+    # Targets for modules with no builtin to compare with: tasks/cases.yml
+    # runs the module and checks what it did.
+    checked = sorted(d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, 'tasks', 'cases.yml')))
+    toc = '\n'.join('  - [%s](#%s)' % (t, t) for t in sorted(targets + checked))
     out = [TESTDOCS_INTRO.format(targets=toc, unit=unit_section())]
     for target in targets:
         sections = target_cases(target)
@@ -315,6 +332,12 @@ def render_testdocs():
         checks = dedicated_checks(target)
         if checks:
             out.append('#### Dedicated checks\n\n%s\n' % '\n'.join(checks))
+    for target in checked:
+        with open(os.path.join(root, target, 'tasks', 'cases.yml')) as f:
+            steps = [m.group(1) for m in re.finditer(r'^- name: (.*)$', f.read(), re.M)]
+        out.append('### %s\n\n%s\n\n%d steps in `tests/integration/targets/%s/tasks/cases.yml`:\n' % (
+            target, leading_comment(os.path.join(root, target, 'tasks', 'main.yml')), len(steps), target))
+        out.append('\n'.join('- %s' % step for step in steps) + '\n')
     if helpers:
         out.append('### Helper targets\n')
         for helper in helpers:
@@ -346,10 +369,9 @@ def cmd_testdocs(args):
 
 
 def cmd_clean(args):
-    for module in go_build.modules():
-        for path in glob.glob(os.path.join(go_build.MODULES_DIR, '%s_*_*' % module)):
-            os.remove(path)
-            print('removed', os.path.relpath(path, COLLECTION_ROOT))
+    for path in glob.glob(os.path.join(go_build.MODULES_DIR, go_build.binary_name('*_*'))):
+        os.remove(path)
+        print('removed', os.path.relpath(path, COLLECTION_ROOT))
 
 
 def run(argv, **kwargs):
@@ -367,7 +389,6 @@ def main():
     p = sub.add_parser('build', help='compile modules into plugins/modules')
     p.add_argument('--platform', action='append', metavar='GOOS/GOARCH',
                    help='platform to build, repeatable (default: %s)' % ' '.join(SHIPPED_PLATFORMS))
-    p.add_argument('--module', action='append', help='module to build, repeatable (default: all)')
     p.set_defaults(func=cmd_build)
 
     p = sub.add_parser('unit', help='go vet and go test')
